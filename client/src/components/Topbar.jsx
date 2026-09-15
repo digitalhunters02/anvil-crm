@@ -37,14 +37,14 @@ export default function Topbar({ title, count, actions }) {
   }
 
   return (
-    <header className="flex items-center justify-between gap-4 px-7 py-4 border-b border-line bg-surface flex-shrink-0">
-      <div className="flex items-center gap-2.5">
-        <h1 className="font-head uppercase tracking-wide text-[20px] font-semibold text-ink">{title}</h1>
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 sm:px-7 py-4 border-b border-line bg-surface flex-shrink-0">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <h1 className="font-head uppercase tracking-wide text-[20px] font-semibold text-ink truncate">{title}</h1>
         {typeof count === 'number' && (
-          <span className="text-xs font-medium text-muted bg-wash px-2 py-0.5 rounded-full font-sans normal-case tracking-normal">{count}</span>
+          <span className="flex-shrink-0 text-xs font-medium text-muted bg-wash px-2 py-0.5 rounded-full font-sans normal-case tracking-normal">{count}</span>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="hidden md:flex items-center gap-2 bg-wash rounded-lg px-3 py-1.5 w-64">
           <Icon name="search" size={15} stroke="#93969a" />
           <input

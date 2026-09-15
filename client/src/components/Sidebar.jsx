@@ -47,7 +47,7 @@ const NAV = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onNavigate }) {
   const fileRef = useRef(null);
   const [avatar, setAvatar] = useState(null);
 
@@ -77,7 +77,11 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-side text-sideText flex flex-col h-full min-h-0">
+    <aside
+      className={`fixed md:static inset-y-0 left-0 z-50 w-[260px] max-w-[82vw] md:w-64 md:max-w-none flex-shrink-0 bg-side text-sideText flex flex-col h-full min-h-0 shadow-2xl md:shadow-none transition-transform duration-300 ease-in-out md:translate-x-0 ${
+        open ? 'translate-x-0' : '-translate-x-full'
+      }`}
+    >
       <div className="flex items-center gap-2.5 px-5 pt-6 pb-5 flex-shrink-0">
         <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
           <rect x="1.5" y="1.5" width="29" height="29" rx="5" fill="#b3261e" />
@@ -105,6 +109,7 @@ export default function Sidebar() {
                   key={item.to}
                   to={item.to}
                   end={item.to === '/'}
+                  onClick={onNavigate}
                   className={({ isActive }) =>
                     `relative flex items-center gap-2.5 px-3 py-2 rounded-md text-[13.5px] font-medium transition-colors ${
                       isActive ? 'bg-side2 text-white' : 'text-sideText hover:bg-side2/60 hover:text-white'
