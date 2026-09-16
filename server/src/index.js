@@ -1,6 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import db from './db.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
 const app = express();
 app.use(cors());
@@ -789,6 +794,13 @@ app.get('/api/reports', (req, res) => {
     revenueByMonth, inspectionResults, revenueByCustomer, poStatusBreakdown,
     quoteCount, acceptedQuotes, quoteAcceptRate,
   });
+});
+
+// Serve the built React app for every non-API route. Placed after all
+// /api/* routes above so it only ever catches page loads, never API calls.
+app.use(express.static(CLIENT_DIST));
+app.get(/^(?!\/api).*/, (_req, res) => {
+  res.sendFile(path.join(CLIENT_DIST, 'index.html'));
 });
 
 app.listen(PORT, () => {
