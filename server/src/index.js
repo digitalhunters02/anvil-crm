@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import db from './db.js';
+import { get, all, run, initSchema } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
@@ -13,6 +13,10 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 4360;
 
+// Wraps an async route handler so a rejected promise reaches Express's
+// error handler instead of crashing the process or hanging the request.
+const ar = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // -------------------- helpers --------------------
 function missingField(body, fields) {
   for (const f of fields) {
@@ -21,18 +25,18 @@ function missingField(body, fields) {
   return null;
 }
 
-function rowExists(table, id) {
+async function rowExists(table, id) {
   if (id === undefined || id === null || id === '') return false;
-  return !!db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id);
+  return !!(await get(`SELECT 1 FROM ${table} WHERE id = ?`, id));
 }
 
-function countWhere(table, column, id) {
-  return db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`).get(id).n;
+async function countWhere(table, column, id) {
+  return (await get(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`, id)).n;
 }
 
-function checkBlockers(res, blockers, id) {
+async function checkBlockers(res, blockers, id) {
   for (const [table, col, label] of blockers) {
-    const n = countWhere(table, col, id);
+    const n = await countWhere(table, col, id);
     if (n > 0) {
       res.status(409).json({ error: `Cannot delete: ${n} ${label}${n === 1 ? '' : 's'} still reference this record.` });
       return true;
@@ -41,43 +45,39 @@ function checkBlockers(res, blockers, id) {
   return false;
 }
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // -------------------- users --------------------
-function userRow(id) {
-  return db.prepare(`SELECT * FROM users WHERE id = ?`).get(id);
+async function userRow(id) {
+  return get(`SELECT * FROM users WHERE id = ?`, id);
 }
 
-app.get('/api/users', (req, res) => {
-  res.json(db.prepare(`SELECT * FROM users ORDER BY name`).all());
-});
+app.get('/api/users', ar(async (req, res) => {
+  res.json(await all(`SELECT * FROM users ORDER BY name`));
+}));
 
-app.post('/api/users', (req, res) => {
+app.post('/api/users', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['name', 'email', 'role', 'initials', 'color']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  const info = db.prepare(`
+  const info = await run(`
     INSERT INTO users (name, email, role, initials, color)
-    VALUES (@name, @email, @role, @initials, @color)
-  `).run({ name: b.name, email: b.email, role: b.role, initials: b.initials, color: b.color });
-  res.status(201).json(userRow(info.lastInsertRowid));
-});
+    VALUES (@name, @email, @role, @initials, @color) RETURNING id
+  `, { name: b.name, email: b.email, role: b.role, initials: b.initials, color: b.color });
+  res.status(201).json(await userRow(info.rows[0].id));
+}));
 
-app.put('/api/users/:id', (req, res) => {
-  const existing = userRow(req.params.id);
+app.put('/api/users/:id', ar(async (req, res) => {
+  const existing = await userRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['name', 'email', 'role', 'initials', 'color']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  db.prepare(`UPDATE users SET name=@name, email=@email, role=@role, initials=@initials, color=@color WHERE id=@id`)
-    .run({ id: req.params.id, name: b.name, email: b.email, role: b.role, initials: b.initials, color: b.color });
-  res.json(userRow(req.params.id));
-});
+  await run(`UPDATE users SET name=@name, email=@email, role=@role, initials=@initials, color=@color WHERE id=@id`,
+    { id: req.params.id, name: b.name, email: b.email, role: b.role, initials: b.initials, color: b.color });
+  res.json(await userRow(req.params.id));
+}));
 
-app.delete('/api/users/:id', (req, res) => {
-  const existing = userRow(req.params.id);
+app.delete('/api/users/:id', ar(async (req, res) => {
+  const existing = await userRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const blockers = [
     ['customers', 'owner_user_id', 'customer'],
@@ -87,10 +87,10 @@ app.delete('/api/users/:id', (req, res) => {
     ['quality_inspections', 'inspector_user_id', 'quality inspection'],
     ['activities', 'owner_user_id', 'activity'],
   ];
-  if (checkBlockers(res, blockers, req.params.id)) return;
-  db.prepare(`DELETE FROM users WHERE id = ?`).run(req.params.id);
+  if (await checkBlockers(res, blockers, req.params.id)) return;
+  await run(`DELETE FROM users WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- customers --------------------
 const CUSTOMER_SELECT = `
@@ -100,46 +100,46 @@ const CUSTOMER_SELECT = `
   FROM customers c
   JOIN users u ON u.id = c.owner_user_id
 `;
-function customerRow(id) {
-  return db.prepare(`${CUSTOMER_SELECT} WHERE c.id = ?`).get(id);
+async function customerRow(id) {
+  return get(`${CUSTOMER_SELECT} WHERE c.id = ?`, id);
 }
 
-app.get('/api/customers', (req, res) => {
-  res.json(db.prepare(`${CUSTOMER_SELECT} ORDER BY c.name`).all());
-});
+app.get('/api/customers', ar(async (req, res) => {
+  res.json(await all(`${CUSTOMER_SELECT} ORDER BY c.name`));
+}));
 
 const CUSTOMER_FIELDS = ['name', 'industry', 'address', 'city', 'state', 'contact_name', 'contact_email', 'contact_phone', 'owner_user_id', 'status', 'notes'];
 
-app.post('/api/customers', (req, res) => {
+app.post('/api/customers', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['name', 'industry', 'address', 'city', 'state', 'contact_name', 'contact_email', 'contact_phone', 'owner_user_id', 'status']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  const info = db.prepare(`
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  const info = await run(`
     INSERT INTO customers (name, industry, address, city, state, contact_name, contact_email, contact_phone, owner_user_id, status, notes)
-    VALUES (@name, @industry, @address, @city, @state, @contact_name, @contact_email, @contact_phone, @owner_user_id, @status, @notes)
-  `).run({ ...Object.fromEntries(CUSTOMER_FIELDS.map((f) => [f, b[f] ?? null])) });
-  res.status(201).json(customerRow(info.lastInsertRowid));
-});
+    VALUES (@name, @industry, @address, @city, @state, @contact_name, @contact_email, @contact_phone, @owner_user_id, @status, @notes) RETURNING id
+  `, { ...Object.fromEntries(CUSTOMER_FIELDS.map((f) => [f, b[f] ?? null])) });
+  res.status(201).json(await customerRow(info.rows[0].id));
+}));
 
-app.put('/api/customers/:id', (req, res) => {
-  const existing = customerRow(req.params.id);
+app.put('/api/customers/:id', ar(async (req, res) => {
+  const existing = await customerRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['name', 'industry', 'address', 'city', 'state', 'contact_name', 'contact_email', 'contact_phone', 'owner_user_id', 'status']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  db.prepare(`
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  await run(`
     UPDATE customers SET name=@name, industry=@industry, address=@address, city=@city, state=@state,
       contact_name=@contact_name, contact_email=@contact_email, contact_phone=@contact_phone,
       owner_user_id=@owner_user_id, status=@status, notes=@notes
     WHERE id=@id
-  `).run({ id: req.params.id, ...Object.fromEntries(CUSTOMER_FIELDS.map((f) => [f, b[f] ?? null])) });
-  res.json(customerRow(req.params.id));
-});
+  `, { id: req.params.id, ...Object.fromEntries(CUSTOMER_FIELDS.map((f) => [f, b[f] ?? null])) });
+  res.json(await customerRow(req.params.id));
+}));
 
-app.delete('/api/customers/:id', (req, res) => {
-  const existing = customerRow(req.params.id);
+app.delete('/api/customers/:id', ar(async (req, res) => {
+  const existing = await customerRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const blockers = [
     ['rfqs', 'customer_id', 'RFQ'],
@@ -148,10 +148,10 @@ app.delete('/api/customers/:id', (req, res) => {
     ['shipments', 'customer_id', 'shipment'],
     ['invoices', 'customer_id', 'invoice'],
   ];
-  if (checkBlockers(res, blockers, req.params.id)) return;
-  db.prepare(`DELETE FROM customers WHERE id = ?`).run(req.params.id);
+  if (await checkBlockers(res, blockers, req.params.id)) return;
+  await run(`DELETE FROM customers WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- rfqs --------------------
 const RFQ_SELECT = `
@@ -161,52 +161,52 @@ const RFQ_SELECT = `
   JOIN customers c ON c.id = rf.customer_id
   JOIN users u ON u.id = rf.owner_user_id
 `;
-function rfqRow(id) {
-  return db.prepare(`${RFQ_SELECT} WHERE rf.id = ?`).get(id);
+async function rfqRow(id) {
+  return get(`${RFQ_SELECT} WHERE rf.id = ?`, id);
 }
 
-app.get('/api/rfqs', (req, res) => {
-  res.json(db.prepare(`${RFQ_SELECT} ORDER BY rf.due_date`).all());
-});
+app.get('/api/rfqs', ar(async (req, res) => {
+  res.json(await all(`${RFQ_SELECT} ORDER BY rf.due_date`));
+}));
 
 const RFQ_FIELDS = ['customer_id', 'title', 'description', 'target_price', 'due_date', 'status', 'owner_user_id', 'received_date'];
 
-app.post('/api/rfqs', (req, res) => {
+app.post('/api/rfqs', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['customer_id', 'title', 'due_date', 'status', 'owner_user_id', 'received_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  const info = db.prepare(`
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  const info = await run(`
     INSERT INTO rfqs (customer_id, title, description, target_price, due_date, status, owner_user_id, received_date)
-    VALUES (@customer_id, @title, @description, @target_price, @due_date, @status, @owner_user_id, @received_date)
-  `).run({ ...Object.fromEntries(RFQ_FIELDS.map((f) => [f, b[f] === '' ? null : b[f] ?? null])), target_price: b.target_price ? Number(b.target_price) : null });
-  res.status(201).json(rfqRow(info.lastInsertRowid));
-});
+    VALUES (@customer_id, @title, @description, @target_price, @due_date, @status, @owner_user_id, @received_date) RETURNING id
+  `, { ...Object.fromEntries(RFQ_FIELDS.map((f) => [f, b[f] === '' ? null : b[f] ?? null])), target_price: b.target_price ? Number(b.target_price) : null });
+  res.status(201).json(await rfqRow(info.rows[0].id));
+}));
 
-app.put('/api/rfqs/:id', (req, res) => {
-  const existing = rfqRow(req.params.id);
+app.put('/api/rfqs/:id', ar(async (req, res) => {
+  const existing = await rfqRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['customer_id', 'title', 'due_date', 'status', 'owner_user_id', 'received_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  db.prepare(`
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  await run(`
     UPDATE rfqs SET customer_id=@customer_id, title=@title, description=@description, target_price=@target_price,
       due_date=@due_date, status=@status, owner_user_id=@owner_user_id, received_date=@received_date
     WHERE id=@id
-  `).run({ id: req.params.id, ...Object.fromEntries(RFQ_FIELDS.map((f) => [f, b[f] === '' ? null : b[f] ?? null])), target_price: b.target_price ? Number(b.target_price) : null });
-  res.json(rfqRow(req.params.id));
-});
+  `, { id: req.params.id, ...Object.fromEntries(RFQ_FIELDS.map((f) => [f, b[f] === '' ? null : b[f] ?? null])), target_price: b.target_price ? Number(b.target_price) : null });
+  res.json(await rfqRow(req.params.id));
+}));
 
-app.delete('/api/rfqs/:id', (req, res) => {
-  const existing = rfqRow(req.params.id);
+app.delete('/api/rfqs/:id', ar(async (req, res) => {
+  const existing = await rfqRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  if (checkBlockers(res, [['quotes', 'rfq_id', 'quote']], req.params.id)) return;
-  db.prepare(`DELETE FROM rfqs WHERE id = ?`).run(req.params.id);
+  if (await checkBlockers(res, [['quotes', 'rfq_id', 'quote']], req.params.id)) return;
+  await run(`DELETE FROM rfqs WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- quotes --------------------
 const QUOTE_SELECT = `
@@ -218,62 +218,62 @@ const QUOTE_SELECT = `
   LEFT JOIN rfqs rf ON rf.id = q.rfq_id
   JOIN users u ON u.id = q.owner_user_id
 `;
-function quoteRow(id) {
-  return db.prepare(`${QUOTE_SELECT} WHERE q.id = ?`).get(id);
+async function quoteRow(id) {
+  return get(`${QUOTE_SELECT} WHERE q.id = ?`, id);
 }
 
-app.get('/api/quotes', (req, res) => {
-  res.json(db.prepare(`${QUOTE_SELECT} ORDER BY q.quote_number DESC`).all());
-});
+app.get('/api/quotes', ar(async (req, res) => {
+  res.json(await all(`${QUOTE_SELECT} ORDER BY q.quote_number DESC`));
+}));
 
-app.post('/api/quotes', (req, res) => {
+app.post('/api/quotes', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['customer_id', 'quote_number', 'total_amount', 'status', 'valid_until', 'owner_user_id']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  if (b.rfq_id && !rowExists('rfqs', b.rfq_id)) return res.status(400).json({ error: 'rfq_id does not reference a real RFQ' });
-  const info = db.prepare(`
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  if (b.rfq_id && !(await rowExists('rfqs', b.rfq_id))) return res.status(400).json({ error: 'rfq_id does not reference a real RFQ' });
+  const info = await run(`
     INSERT INTO quotes (rfq_id, customer_id, quote_number, total_amount, status, valid_until, owner_user_id)
-    VALUES (@rfq_id, @customer_id, @quote_number, @total_amount, @status, @valid_until, @owner_user_id)
-  `).run({
+    VALUES (@rfq_id, @customer_id, @quote_number, @total_amount, @status, @valid_until, @owner_user_id) RETURNING id
+  `, {
     rfq_id: b.rfq_id || null, customer_id: b.customer_id, quote_number: b.quote_number,
     total_amount: Number(b.total_amount) || 0, status: b.status, valid_until: b.valid_until, owner_user_id: b.owner_user_id,
   });
-  res.status(201).json(quoteRow(info.lastInsertRowid));
-});
+  res.status(201).json(await quoteRow(info.rows[0].id));
+}));
 
-app.put('/api/quotes/:id', (req, res) => {
-  const existing = quoteRow(req.params.id);
+app.put('/api/quotes/:id', ar(async (req, res) => {
+  const existing = await quoteRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['customer_id', 'quote_number', 'total_amount', 'status', 'valid_until', 'owner_user_id']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  if (b.rfq_id && !rowExists('rfqs', b.rfq_id)) return res.status(400).json({ error: 'rfq_id does not reference a real RFQ' });
-  db.prepare(`
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  if (b.rfq_id && !(await rowExists('rfqs', b.rfq_id))) return res.status(400).json({ error: 'rfq_id does not reference a real RFQ' });
+  await run(`
     UPDATE quotes SET rfq_id=@rfq_id, customer_id=@customer_id, quote_number=@quote_number, total_amount=@total_amount,
       status=@status, valid_until=@valid_until, owner_user_id=@owner_user_id
     WHERE id=@id
-  `).run({
+  `, {
     id: req.params.id, rfq_id: b.rfq_id || null, customer_id: b.customer_id, quote_number: b.quote_number,
     total_amount: Number(b.total_amount) || 0, status: b.status, valid_until: b.valid_until, owner_user_id: b.owner_user_id,
   });
-  res.json(quoteRow(req.params.id));
-});
+  res.json(await quoteRow(req.params.id));
+}));
 
-app.delete('/api/quotes/:id', (req, res) => {
-  const existing = quoteRow(req.params.id);
+app.delete('/api/quotes/:id', ar(async (req, res) => {
+  const existing = await quoteRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const blockers = [
     ['bill_of_materials', 'quote_id', 'BOM line item'],
     ['work_orders', 'quote_id', 'work order'],
   ];
-  if (checkBlockers(res, blockers, req.params.id)) return;
-  db.prepare(`DELETE FROM quotes WHERE id = ?`).run(req.params.id);
+  if (await checkBlockers(res, blockers, req.params.id)) return;
+  await run(`DELETE FROM quotes WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- bill of materials --------------------
 const BOM_SELECT = `
@@ -282,99 +282,99 @@ const BOM_SELECT = `
   JOIN quotes q ON q.id = b.quote_id
   JOIN customers c ON c.id = q.customer_id
 `;
-function bomRow(id) {
-  return db.prepare(`${BOM_SELECT} WHERE b.id = ?`).get(id);
+async function bomRow(id) {
+  return get(`${BOM_SELECT} WHERE b.id = ?`, id);
 }
 
-app.get('/api/bill-of-materials', (req, res) => {
-  res.json(db.prepare(`${BOM_SELECT} ORDER BY b.id DESC`).all());
-});
+app.get('/api/bill-of-materials', ar(async (req, res) => {
+  res.json(await all(`${BOM_SELECT} ORDER BY b.id DESC`));
+}));
 
-app.post('/api/bill-of-materials', (req, res) => {
+app.post('/api/bill-of-materials', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['quote_id', 'part_name', 'material', 'quantity', 'unit_of_measure', 'unit_cost']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('quotes', b.quote_id)) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
-  const info = db.prepare(`
+  if (!(await rowExists('quotes', b.quote_id))) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
+  const info = await run(`
     INSERT INTO bill_of_materials (quote_id, part_name, material, quantity, unit_of_measure, unit_cost, notes)
-    VALUES (@quote_id, @part_name, @material, @quantity, @unit_of_measure, @unit_cost, @notes)
-  `).run({
+    VALUES (@quote_id, @part_name, @material, @quantity, @unit_of_measure, @unit_cost, @notes) RETURNING id
+  `, {
     quote_id: b.quote_id, part_name: b.part_name, material: b.material,
     quantity: Number(b.quantity) || 0, unit_of_measure: b.unit_of_measure, unit_cost: Number(b.unit_cost) || 0,
     notes: b.notes || null,
   });
-  res.status(201).json(bomRow(info.lastInsertRowid));
-});
+  res.status(201).json(await bomRow(info.rows[0].id));
+}));
 
-app.put('/api/bill-of-materials/:id', (req, res) => {
-  const existing = bomRow(req.params.id);
+app.put('/api/bill-of-materials/:id', ar(async (req, res) => {
+  const existing = await bomRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['quote_id', 'part_name', 'material', 'quantity', 'unit_of_measure', 'unit_cost']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('quotes', b.quote_id)) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
-  db.prepare(`
+  if (!(await rowExists('quotes', b.quote_id))) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
+  await run(`
     UPDATE bill_of_materials SET quote_id=@quote_id, part_name=@part_name, material=@material, quantity=@quantity,
       unit_of_measure=@unit_of_measure, unit_cost=@unit_cost, notes=@notes
     WHERE id=@id
-  `).run({
+  `, {
     id: req.params.id, quote_id: b.quote_id, part_name: b.part_name, material: b.material,
     quantity: Number(b.quantity) || 0, unit_of_measure: b.unit_of_measure, unit_cost: Number(b.unit_cost) || 0,
     notes: b.notes || null,
   });
-  res.json(bomRow(req.params.id));
-});
+  res.json(await bomRow(req.params.id));
+}));
 
-app.delete('/api/bill-of-materials/:id', (req, res) => {
-  const existing = bomRow(req.params.id);
+app.delete('/api/bill-of-materials/:id', ar(async (req, res) => {
+  const existing = await bomRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  db.prepare(`DELETE FROM bill_of_materials WHERE id = ?`).run(req.params.id);
+  await run(`DELETE FROM bill_of_materials WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- suppliers --------------------
-function supplierRow(id) {
-  return db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM purchase_orders p WHERE p.supplier_id = s.id) AS po_count FROM suppliers s WHERE s.id = ?`).get(id);
+async function supplierRow(id) {
+  return get(`SELECT s.*, (SELECT COUNT(*) FROM purchase_orders p WHERE p.supplier_id = s.id) AS po_count FROM suppliers s WHERE s.id = ?`, id);
 }
 
-app.get('/api/suppliers', (req, res) => {
-  res.json(db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM purchase_orders p WHERE p.supplier_id = s.id) AS po_count FROM suppliers s ORDER BY s.name`).all());
-});
+app.get('/api/suppliers', ar(async (req, res) => {
+  res.json(await all(`SELECT s.*, (SELECT COUNT(*) FROM purchase_orders p WHERE p.supplier_id = s.id) AS po_count FROM suppliers s ORDER BY s.name`));
+}));
 
 const SUPPLIER_FIELDS = ['name', 'specialty', 'contact_name', 'contact_email', 'contact_phone', 'lead_time_days', 'notes'];
 
-app.post('/api/suppliers', (req, res) => {
+app.post('/api/suppliers', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['name', 'specialty', 'contact_name', 'contact_email', 'contact_phone', 'lead_time_days']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  const info = db.prepare(`
+  const info = await run(`
     INSERT INTO suppliers (name, specialty, contact_name, contact_email, contact_phone, lead_time_days, notes)
-    VALUES (@name, @specialty, @contact_name, @contact_email, @contact_phone, @lead_time_days, @notes)
-  `).run({ ...Object.fromEntries(SUPPLIER_FIELDS.map((f) => [f, b[f] ?? null])), lead_time_days: Number(b.lead_time_days) || 0 });
-  res.status(201).json(supplierRow(info.lastInsertRowid));
-});
+    VALUES (@name, @specialty, @contact_name, @contact_email, @contact_phone, @lead_time_days, @notes) RETURNING id
+  `, { ...Object.fromEntries(SUPPLIER_FIELDS.map((f) => [f, b[f] ?? null])), lead_time_days: Number(b.lead_time_days) || 0 });
+  res.status(201).json(await supplierRow(info.rows[0].id));
+}));
 
-app.put('/api/suppliers/:id', (req, res) => {
-  const existing = supplierRow(req.params.id);
+app.put('/api/suppliers/:id', ar(async (req, res) => {
+  const existing = await supplierRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['name', 'specialty', 'contact_name', 'contact_email', 'contact_phone', 'lead_time_days']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  db.prepare(`
+  await run(`
     UPDATE suppliers SET name=@name, specialty=@specialty, contact_name=@contact_name, contact_email=@contact_email,
       contact_phone=@contact_phone, lead_time_days=@lead_time_days, notes=@notes
     WHERE id=@id
-  `).run({ id: req.params.id, ...Object.fromEntries(SUPPLIER_FIELDS.map((f) => [f, b[f] ?? null])), lead_time_days: Number(b.lead_time_days) || 0 });
-  res.json(supplierRow(req.params.id));
-});
+  `, { id: req.params.id, ...Object.fromEntries(SUPPLIER_FIELDS.map((f) => [f, b[f] ?? null])), lead_time_days: Number(b.lead_time_days) || 0 });
+  res.json(await supplierRow(req.params.id));
+}));
 
-app.delete('/api/suppliers/:id', (req, res) => {
-  const existing = supplierRow(req.params.id);
+app.delete('/api/suppliers/:id', ar(async (req, res) => {
+  const existing = await supplierRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  if (checkBlockers(res, [['purchase_orders', 'supplier_id', 'purchase order']], req.params.id)) return;
-  db.prepare(`DELETE FROM suppliers WHERE id = ?`).run(req.params.id);
+  if (await checkBlockers(res, [['purchase_orders', 'supplier_id', 'purchase order']], req.params.id)) return;
+  await run(`DELETE FROM suppliers WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- purchase orders --------------------
 const PO_SELECT = `
@@ -382,53 +382,53 @@ const PO_SELECT = `
   FROM purchase_orders p
   JOIN suppliers s ON s.id = p.supplier_id
 `;
-function poRow(id) {
-  return db.prepare(`${PO_SELECT} WHERE p.id = ?`).get(id);
+async function poRow(id) {
+  return get(`${PO_SELECT} WHERE p.id = ?`, id);
 }
 
-app.get('/api/purchase-orders', (req, res) => {
-  res.json(db.prepare(`${PO_SELECT} ORDER BY p.order_date DESC`).all());
-});
+app.get('/api/purchase-orders', ar(async (req, res) => {
+  res.json(await all(`${PO_SELECT} ORDER BY p.order_date DESC`));
+}));
 
-app.post('/api/purchase-orders', (req, res) => {
+app.post('/api/purchase-orders', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['supplier_id', 'po_number', 'status', 'total_amount', 'order_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('suppliers', b.supplier_id)) return res.status(400).json({ error: 'supplier_id does not reference a real supplier' });
-  const info = db.prepare(`
+  if (!(await rowExists('suppliers', b.supplier_id))) return res.status(400).json({ error: 'supplier_id does not reference a real supplier' });
+  const info = await run(`
     INSERT INTO purchase_orders (supplier_id, po_number, status, total_amount, order_date, expected_date, notes)
-    VALUES (@supplier_id, @po_number, @status, @total_amount, @order_date, @expected_date, @notes)
-  `).run({
+    VALUES (@supplier_id, @po_number, @status, @total_amount, @order_date, @expected_date, @notes) RETURNING id
+  `, {
     supplier_id: b.supplier_id, po_number: b.po_number, status: b.status, total_amount: Number(b.total_amount) || 0,
     order_date: b.order_date, expected_date: b.expected_date || null, notes: b.notes || null,
   });
-  res.status(201).json(poRow(info.lastInsertRowid));
-});
+  res.status(201).json(await poRow(info.rows[0].id));
+}));
 
-app.put('/api/purchase-orders/:id', (req, res) => {
-  const existing = poRow(req.params.id);
+app.put('/api/purchase-orders/:id', ar(async (req, res) => {
+  const existing = await poRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['supplier_id', 'po_number', 'status', 'total_amount', 'order_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('suppliers', b.supplier_id)) return res.status(400).json({ error: 'supplier_id does not reference a real supplier' });
-  db.prepare(`
+  if (!(await rowExists('suppliers', b.supplier_id))) return res.status(400).json({ error: 'supplier_id does not reference a real supplier' });
+  await run(`
     UPDATE purchase_orders SET supplier_id=@supplier_id, po_number=@po_number, status=@status, total_amount=@total_amount,
       order_date=@order_date, expected_date=@expected_date, notes=@notes
     WHERE id=@id
-  `).run({
+  `, {
     id: req.params.id, supplier_id: b.supplier_id, po_number: b.po_number, status: b.status, total_amount: Number(b.total_amount) || 0,
     order_date: b.order_date, expected_date: b.expected_date || null, notes: b.notes || null,
   });
-  res.json(poRow(req.params.id));
-});
+  res.json(await poRow(req.params.id));
+}));
 
-app.delete('/api/purchase-orders/:id', (req, res) => {
-  const existing = poRow(req.params.id);
+app.delete('/api/purchase-orders/:id', ar(async (req, res) => {
+  const existing = await poRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  db.prepare(`DELETE FROM purchase_orders WHERE id = ?`).run(req.params.id);
+  await run(`DELETE FROM purchase_orders WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- work orders --------------------
 const WORK_ORDER_SELECT = `
@@ -439,63 +439,63 @@ const WORK_ORDER_SELECT = `
   LEFT JOIN quotes q ON q.id = w.quote_id
   JOIN users u ON u.id = w.owner_user_id
 `;
-function workOrderRow(id) {
-  return db.prepare(`${WORK_ORDER_SELECT} WHERE w.id = ?`).get(id);
+async function workOrderRow(id) {
+  return get(`${WORK_ORDER_SELECT} WHERE w.id = ?`, id);
 }
 
-app.get('/api/work-orders', (req, res) => {
-  res.json(db.prepare(`${WORK_ORDER_SELECT} ORDER BY w.due_date`).all());
-});
+app.get('/api/work-orders', ar(async (req, res) => {
+  res.json(await all(`${WORK_ORDER_SELECT} ORDER BY w.due_date`));
+}));
 
-app.post('/api/work-orders', (req, res) => {
+app.post('/api/work-orders', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['customer_id', 'work_order_number', 'status', 'owner_user_id', 'due_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  if (b.quote_id && !rowExists('quotes', b.quote_id)) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
-  const info = db.prepare(`
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  if (b.quote_id && !(await rowExists('quotes', b.quote_id))) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
+  const info = await run(`
     INSERT INTO work_orders (quote_id, customer_id, work_order_number, status, owner_user_id, start_date, due_date, notes)
-    VALUES (@quote_id, @customer_id, @work_order_number, @status, @owner_user_id, @start_date, @due_date, @notes)
-  `).run({
+    VALUES (@quote_id, @customer_id, @work_order_number, @status, @owner_user_id, @start_date, @due_date, @notes) RETURNING id
+  `, {
     quote_id: b.quote_id || null, customer_id: b.customer_id, work_order_number: b.work_order_number, status: b.status,
     owner_user_id: b.owner_user_id, start_date: b.start_date || null, due_date: b.due_date, notes: b.notes || null,
   });
-  res.status(201).json(workOrderRow(info.lastInsertRowid));
-});
+  res.status(201).json(await workOrderRow(info.rows[0].id));
+}));
 
-app.put('/api/work-orders/:id', (req, res) => {
-  const existing = workOrderRow(req.params.id);
+app.put('/api/work-orders/:id', ar(async (req, res) => {
+  const existing = await workOrderRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['customer_id', 'work_order_number', 'status', 'owner_user_id', 'due_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  if (!rowExists('users', b.owner_user_id)) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
-  if (b.quote_id && !rowExists('quotes', b.quote_id)) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
-  db.prepare(`
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  if (!(await rowExists('users', b.owner_user_id))) return res.status(400).json({ error: 'owner_user_id does not reference a real user' });
+  if (b.quote_id && !(await rowExists('quotes', b.quote_id))) return res.status(400).json({ error: 'quote_id does not reference a real quote' });
+  await run(`
     UPDATE work_orders SET quote_id=@quote_id, customer_id=@customer_id, work_order_number=@work_order_number, status=@status,
       owner_user_id=@owner_user_id, start_date=@start_date, due_date=@due_date, notes=@notes
     WHERE id=@id
-  `).run({
+  `, {
     id: req.params.id, quote_id: b.quote_id || null, customer_id: b.customer_id, work_order_number: b.work_order_number, status: b.status,
     owner_user_id: b.owner_user_id, start_date: b.start_date || null, due_date: b.due_date, notes: b.notes || null,
   });
-  res.json(workOrderRow(req.params.id));
-});
+  res.json(await workOrderRow(req.params.id));
+}));
 
-app.delete('/api/work-orders/:id', (req, res) => {
-  const existing = workOrderRow(req.params.id);
+app.delete('/api/work-orders/:id', ar(async (req, res) => {
+  const existing = await workOrderRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const blockers = [
     ['quality_inspections', 'work_order_id', 'quality inspection'],
     ['shipments', 'work_order_id', 'shipment'],
     ['invoices', 'work_order_id', 'invoice'],
   ];
-  if (checkBlockers(res, blockers, req.params.id)) return;
-  db.prepare(`DELETE FROM work_orders WHERE id = ?`).run(req.params.id);
+  if (await checkBlockers(res, blockers, req.params.id)) return;
+  await run(`DELETE FROM work_orders WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- quality inspections --------------------
 const QI_SELECT = `
@@ -505,49 +505,49 @@ const QI_SELECT = `
   JOIN customers c ON c.id = w.customer_id
   JOIN users u ON u.id = qi.inspector_user_id
 `;
-function qiRow(id) {
-  return db.prepare(`${QI_SELECT} WHERE qi.id = ?`).get(id);
+async function qiRow(id) {
+  return get(`${QI_SELECT} WHERE qi.id = ?`, id);
 }
 
-app.get('/api/quality-inspections', (req, res) => {
-  res.json(db.prepare(`${QI_SELECT} ORDER BY qi.inspection_date DESC`).all());
-});
+app.get('/api/quality-inspections', ar(async (req, res) => {
+  res.json(await all(`${QI_SELECT} ORDER BY qi.inspection_date DESC`));
+}));
 
-app.post('/api/quality-inspections', (req, res) => {
+app.post('/api/quality-inspections', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['work_order_id', 'inspector_user_id', 'inspection_date', 'result']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('work_orders', b.work_order_id)) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
-  if (!rowExists('users', b.inspector_user_id)) return res.status(400).json({ error: 'inspector_user_id does not reference a real user' });
-  const info = db.prepare(`
+  if (!(await rowExists('work_orders', b.work_order_id))) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
+  if (!(await rowExists('users', b.inspector_user_id))) return res.status(400).json({ error: 'inspector_user_id does not reference a real user' });
+  const info = await run(`
     INSERT INTO quality_inspections (work_order_id, inspector_user_id, inspection_date, result, notes)
-    VALUES (@work_order_id, @inspector_user_id, @inspection_date, @result, @notes)
-  `).run({ work_order_id: b.work_order_id, inspector_user_id: b.inspector_user_id, inspection_date: b.inspection_date, result: b.result, notes: b.notes || null });
-  res.status(201).json(qiRow(info.lastInsertRowid));
-});
+    VALUES (@work_order_id, @inspector_user_id, @inspection_date, @result, @notes) RETURNING id
+  `, { work_order_id: b.work_order_id, inspector_user_id: b.inspector_user_id, inspection_date: b.inspection_date, result: b.result, notes: b.notes || null });
+  res.status(201).json(await qiRow(info.rows[0].id));
+}));
 
-app.put('/api/quality-inspections/:id', (req, res) => {
-  const existing = qiRow(req.params.id);
+app.put('/api/quality-inspections/:id', ar(async (req, res) => {
+  const existing = await qiRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['work_order_id', 'inspector_user_id', 'inspection_date', 'result']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('work_orders', b.work_order_id)) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
-  if (!rowExists('users', b.inspector_user_id)) return res.status(400).json({ error: 'inspector_user_id does not reference a real user' });
-  db.prepare(`
+  if (!(await rowExists('work_orders', b.work_order_id))) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
+  if (!(await rowExists('users', b.inspector_user_id))) return res.status(400).json({ error: 'inspector_user_id does not reference a real user' });
+  await run(`
     UPDATE quality_inspections SET work_order_id=@work_order_id, inspector_user_id=@inspector_user_id,
       inspection_date=@inspection_date, result=@result, notes=@notes
     WHERE id=@id
-  `).run({ id: req.params.id, work_order_id: b.work_order_id, inspector_user_id: b.inspector_user_id, inspection_date: b.inspection_date, result: b.result, notes: b.notes || null });
-  res.json(qiRow(req.params.id));
-});
+  `, { id: req.params.id, work_order_id: b.work_order_id, inspector_user_id: b.inspector_user_id, inspection_date: b.inspection_date, result: b.result, notes: b.notes || null });
+  res.json(await qiRow(req.params.id));
+}));
 
-app.delete('/api/quality-inspections/:id', (req, res) => {
-  const existing = qiRow(req.params.id);
+app.delete('/api/quality-inspections/:id', ar(async (req, res) => {
+  const existing = await qiRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  db.prepare(`DELETE FROM quality_inspections WHERE id = ?`).run(req.params.id);
+  await run(`DELETE FROM quality_inspections WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- shipments --------------------
 const SHIPMENT_SELECT = `
@@ -556,55 +556,55 @@ const SHIPMENT_SELECT = `
   JOIN work_orders w ON w.id = sh.work_order_id
   JOIN customers c ON c.id = sh.customer_id
 `;
-function shipmentRow(id) {
-  return db.prepare(`${SHIPMENT_SELECT} WHERE sh.id = ?`).get(id);
+async function shipmentRow(id) {
+  return get(`${SHIPMENT_SELECT} WHERE sh.id = ?`, id);
 }
 
-app.get('/api/shipments', (req, res) => {
-  res.json(db.prepare(`${SHIPMENT_SELECT} ORDER BY sh.ship_date IS NULL, sh.ship_date DESC`).all());
-});
+app.get('/api/shipments', ar(async (req, res) => {
+  res.json(await all(`${SHIPMENT_SELECT} ORDER BY sh.ship_date IS NULL, sh.ship_date DESC`));
+}));
 
-app.post('/api/shipments', (req, res) => {
+app.post('/api/shipments', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['work_order_id', 'customer_id', 'carrier', 'status']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('work_orders', b.work_order_id)) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  const info = db.prepare(`
+  if (!(await rowExists('work_orders', b.work_order_id))) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  const info = await run(`
     INSERT INTO shipments (work_order_id, customer_id, ship_date, carrier, tracking_number, status)
-    VALUES (@work_order_id, @customer_id, @ship_date, @carrier, @tracking_number, @status)
-  `).run({
+    VALUES (@work_order_id, @customer_id, @ship_date, @carrier, @tracking_number, @status) RETURNING id
+  `, {
     work_order_id: b.work_order_id, customer_id: b.customer_id, ship_date: b.ship_date || null,
     carrier: b.carrier, tracking_number: b.tracking_number || null, status: b.status,
   });
-  res.status(201).json(shipmentRow(info.lastInsertRowid));
-});
+  res.status(201).json(await shipmentRow(info.rows[0].id));
+}));
 
-app.put('/api/shipments/:id', (req, res) => {
-  const existing = shipmentRow(req.params.id);
+app.put('/api/shipments/:id', ar(async (req, res) => {
+  const existing = await shipmentRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['work_order_id', 'customer_id', 'carrier', 'status']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('work_orders', b.work_order_id)) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  db.prepare(`
+  if (!(await rowExists('work_orders', b.work_order_id))) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  await run(`
     UPDATE shipments SET work_order_id=@work_order_id, customer_id=@customer_id, ship_date=@ship_date,
       carrier=@carrier, tracking_number=@tracking_number, status=@status
     WHERE id=@id
-  `).run({
+  `, {
     id: req.params.id, work_order_id: b.work_order_id, customer_id: b.customer_id, ship_date: b.ship_date || null,
     carrier: b.carrier, tracking_number: b.tracking_number || null, status: b.status,
   });
-  res.json(shipmentRow(req.params.id));
-});
+  res.json(await shipmentRow(req.params.id));
+}));
 
-app.delete('/api/shipments/:id', (req, res) => {
-  const existing = shipmentRow(req.params.id);
+app.delete('/api/shipments/:id', ar(async (req, res) => {
+  const existing = await shipmentRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  db.prepare(`DELETE FROM shipments WHERE id = ?`).run(req.params.id);
+  await run(`DELETE FROM shipments WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- invoices --------------------
 const INVOICE_SELECT = `
@@ -613,133 +613,133 @@ const INVOICE_SELECT = `
   JOIN work_orders w ON w.id = i.work_order_id
   JOIN customers c ON c.id = i.customer_id
 `;
-function invoiceRow(id) {
-  return db.prepare(`${INVOICE_SELECT} WHERE i.id = ?`).get(id);
+async function invoiceRow(id) {
+  return get(`${INVOICE_SELECT} WHERE i.id = ?`, id);
 }
 
-app.get('/api/invoices', (req, res) => {
-  res.json(db.prepare(`${INVOICE_SELECT} ORDER BY i.due_date`).all());
-});
+app.get('/api/invoices', ar(async (req, res) => {
+  res.json(await all(`${INVOICE_SELECT} ORDER BY i.due_date`));
+}));
 
-app.post('/api/invoices', (req, res) => {
+app.post('/api/invoices', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['work_order_id', 'customer_id', 'invoice_number', 'amount', 'status', 'issue_date', 'due_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('work_orders', b.work_order_id)) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  const info = db.prepare(`
+  if (!(await rowExists('work_orders', b.work_order_id))) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  const info = await run(`
     INSERT INTO invoices (work_order_id, customer_id, invoice_number, amount, status, issue_date, due_date)
-    VALUES (@work_order_id, @customer_id, @invoice_number, @amount, @status, @issue_date, @due_date)
-  `).run({
+    VALUES (@work_order_id, @customer_id, @invoice_number, @amount, @status, @issue_date, @due_date) RETURNING id
+  `, {
     work_order_id: b.work_order_id, customer_id: b.customer_id, invoice_number: b.invoice_number,
     amount: Number(b.amount) || 0, status: b.status, issue_date: b.issue_date, due_date: b.due_date,
   });
-  res.status(201).json(invoiceRow(info.lastInsertRowid));
-});
+  res.status(201).json(await invoiceRow(info.rows[0].id));
+}));
 
-app.put('/api/invoices/:id', (req, res) => {
-  const existing = invoiceRow(req.params.id);
+app.put('/api/invoices/:id', ar(async (req, res) => {
+  const existing = await invoiceRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const missing = missingField(b, ['work_order_id', 'customer_id', 'invoice_number', 'amount', 'status', 'issue_date', 'due_date']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  if (!rowExists('work_orders', b.work_order_id)) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
-  if (!rowExists('customers', b.customer_id)) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
-  db.prepare(`
+  if (!(await rowExists('work_orders', b.work_order_id))) return res.status(400).json({ error: 'work_order_id does not reference a real work order' });
+  if (!(await rowExists('customers', b.customer_id))) return res.status(400).json({ error: 'customer_id does not reference a real customer' });
+  await run(`
     UPDATE invoices SET work_order_id=@work_order_id, customer_id=@customer_id, invoice_number=@invoice_number,
       amount=@amount, status=@status, issue_date=@issue_date, due_date=@due_date
     WHERE id=@id
-  `).run({
+  `, {
     id: req.params.id, work_order_id: b.work_order_id, customer_id: b.customer_id, invoice_number: b.invoice_number,
     amount: Number(b.amount) || 0, status: b.status, issue_date: b.issue_date, due_date: b.due_date,
   });
-  res.json(invoiceRow(req.params.id));
-});
+  res.json(await invoiceRow(req.params.id));
+}));
 
-app.delete('/api/invoices/:id', (req, res) => {
-  const existing = invoiceRow(req.params.id);
+app.delete('/api/invoices/:id', ar(async (req, res) => {
+  const existing = await invoiceRow(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  db.prepare(`DELETE FROM invoices WHERE id = ?`).run(req.params.id);
+  await run(`DELETE FROM invoices WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- activities --------------------
-app.get('/api/activities', (req, res) => {
-  const rows = db.prepare(`
+app.get('/api/activities', ar(async (req, res) => {
+  const rows = await all(`
     SELECT a.*, u.name AS owner_name, u.initials AS owner_initials, u.color AS owner_color
     FROM activities a
     JOIN users u ON u.id = a.owner_user_id
     ORDER BY a.occurred_at DESC
-  `).all();
+  `);
   res.json(rows);
-});
+}));
 
 // -------------------- automations --------------------
-app.get('/api/automations', (req, res) => {
-  res.json(db.prepare(`SELECT * FROM automations ORDER BY name`).all());
-});
+app.get('/api/automations', ar(async (req, res) => {
+  res.json(await all(`SELECT * FROM automations ORDER BY name`));
+}));
 
-app.post('/api/automations', (req, res) => {
+app.post('/api/automations', ar(async (req, res) => {
   const b = req.body || {};
   const missing = missingField(b, ['name', 'trigger_desc', 'action_desc']);
   if (missing) return res.status(400).json({ error: `${missing} is required` });
-  const info = db.prepare(`
+  const info = await run(`
     INSERT INTO automations (name, trigger_desc, action_desc, active, runs_30d)
-    VALUES (@name, @trigger_desc, @action_desc, @active, 0)
-  `).run({ name: b.name, trigger_desc: b.trigger_desc, action_desc: b.action_desc, active: b.active === false ? 0 : 1 });
-  res.status(201).json(db.prepare(`SELECT * FROM automations WHERE id = ?`).get(info.lastInsertRowid));
-});
+    VALUES (@name, @trigger_desc, @action_desc, @active, 0) RETURNING id
+  `, { name: b.name, trigger_desc: b.trigger_desc, action_desc: b.action_desc, active: b.active === false ? 0 : 1 });
+  res.status(201).json(await get(`SELECT * FROM automations WHERE id = ?`, info.rows[0].id));
+}));
 
-app.patch('/api/automations/:id/active', (req, res) => {
-  const existing = db.prepare(`SELECT * FROM automations WHERE id = ?`).get(req.params.id);
+app.patch('/api/automations/:id/active', ar(async (req, res) => {
+  const existing = await get(`SELECT * FROM automations WHERE id = ?`, req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const { active } = req.body || {};
-  db.prepare(`UPDATE automations SET active = ? WHERE id = ?`).run(active ? 1 : 0, req.params.id);
-  res.json(db.prepare(`SELECT * FROM automations WHERE id = ?`).get(req.params.id));
-});
+  await run(`UPDATE automations SET active = ? WHERE id = ?`, active ? 1 : 0, req.params.id);
+  res.json(await get(`SELECT * FROM automations WHERE id = ?`, req.params.id));
+}));
 
-app.delete('/api/automations/:id', (req, res) => {
-  const existing = db.prepare(`SELECT * FROM automations WHERE id = ?`).get(req.params.id);
+app.delete('/api/automations/:id', ar(async (req, res) => {
+  const existing = await get(`SELECT * FROM automations WHERE id = ?`, req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
-  db.prepare(`DELETE FROM automations WHERE id = ?`).run(req.params.id);
+  await run(`DELETE FROM automations WHERE id = ?`, req.params.id);
   res.status(204).end();
-});
+}));
 
 // -------------------- dashboard --------------------
-app.get('/api/dashboard', (req, res) => {
-  const openRfqs = db.prepare(`SELECT COUNT(*) AS n FROM rfqs WHERE status = 'New'`).get().n;
-  const quotesAwaiting = db.prepare(`SELECT COUNT(*) AS n FROM quotes WHERE status = 'Sent'`).get().n;
-  const workOrdersInProduction = db.prepare(`
+app.get('/api/dashboard', ar(async (req, res) => {
+  const openRfqs = (await get(`SELECT COUNT(*) AS n FROM rfqs WHERE status = 'New'`)).n;
+  const quotesAwaiting = (await get(`SELECT COUNT(*) AS n FROM quotes WHERE status = 'Sent'`)).n;
+  const workOrdersInProduction = (await get(`
     SELECT COUNT(*) AS n FROM work_orders WHERE status IN ('Queued', 'In Fabrication', 'In Welding', 'Quality Inspection')
-  `).get().n;
-  const posAwaitingDelivery = db.prepare(`SELECT COUNT(*) AS n FROM purchase_orders WHERE status IN ('Sent', 'Confirmed')`).get().n;
-  const revenueThisMonth = db.prepare(`
+  `)).n;
+  const posAwaitingDelivery = (await get(`SELECT COUNT(*) AS n FROM purchase_orders WHERE status IN ('Sent', 'Confirmed')`)).n;
+  const revenueThisMonth = (await get(`
     SELECT COALESCE(SUM(amount), 0) AS v FROM invoices WHERE issue_date >= '2026-09-01'
-  `).get().v;
+  `)).v;
 
-  const workOrdersDueSoon = db.prepare(`
+  const workOrdersDueSoon = await all(`
     SELECT w.id, w.work_order_number, w.status, w.due_date, c.name AS customer_name, u.name AS owner_name, u.initials AS owner_initials, u.color AS owner_color
     FROM work_orders w JOIN customers c ON c.id = w.customer_id JOIN users u ON u.id = w.owner_user_id
     WHERE w.status NOT IN ('Completed')
     ORDER BY w.due_date LIMIT 6
-  `).all();
+  `);
 
-  const recentActivity = db.prepare(`
+  const recentActivity = await all(`
     SELECT a.id, a.type, a.subject, a.occurred_at, a.notes, u.name AS owner_name, u.initials AS owner_initials, u.color AS owner_color
     FROM activities a JOIN users u ON u.id = a.owner_user_id
     ORDER BY a.occurred_at DESC LIMIT 8
-  `).all();
+  `);
 
-  const workOrdersByStatus = db.prepare(`
+  const workOrdersByStatus = await all(`
     SELECT status, COUNT(*) AS count FROM work_orders GROUP BY status
-  `).all();
+  `);
 
-  const posAwaiting = db.prepare(`
+  const posAwaiting = await all(`
     SELECT p.id, p.po_number, p.status, p.expected_date, p.total_amount, s.name AS supplier_name
     FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id
     WHERE p.status IN ('Sent', 'Confirmed')
     ORDER BY p.expected_date LIMIT 6
-  `).all();
+  `);
 
   res.json({
     kpis: { openRfqs, quotesAwaiting, workOrdersInProduction, posAwaitingDelivery, revenueThisMonth },
@@ -748,44 +748,44 @@ app.get('/api/dashboard', (req, res) => {
     recentActivity,
     posAwaiting,
   });
-});
+}));
 
 // -------------------- reports --------------------
-app.get('/api/reports', (req, res) => {
-  const totalRfqs = db.prepare(`SELECT COUNT(*) AS n FROM rfqs`).get().n;
-  const wonRfqs = db.prepare(`SELECT COUNT(*) AS n FROM rfqs WHERE status = 'Won'`).get().n;
-  const lostRfqs = db.prepare(`SELECT COUNT(*) AS n FROM rfqs WHERE status = 'Lost'`).get().n;
+app.get('/api/reports', ar(async (req, res) => {
+  const totalRfqs = (await get(`SELECT COUNT(*) AS n FROM rfqs`)).n;
+  const wonRfqs = (await get(`SELECT COUNT(*) AS n FROM rfqs WHERE status = 'Won'`)).n;
+  const lostRfqs = (await get(`SELECT COUNT(*) AS n FROM rfqs WHERE status = 'Lost'`)).n;
   const decided = wonRfqs + lostRfqs;
   const winRate = decided > 0 ? Math.round((wonRfqs / decided) * 100) : 0;
 
-  const shipmentsTotal = db.prepare(`SELECT COUNT(*) AS n FROM shipments WHERE status = 'Delivered'`).get().n;
-  const workOrdersCompleted = db.prepare(`SELECT COUNT(*) AS n FROM work_orders WHERE status = 'Completed'`).get().n;
-  const workOrdersOnHold = db.prepare(`SELECT COUNT(*) AS n FROM work_orders WHERE status = 'On Hold'`).get().n;
+  const shipmentsTotal = (await get(`SELECT COUNT(*) AS n FROM shipments WHERE status = 'Delivered'`)).n;
+  const workOrdersCompleted = (await get(`SELECT COUNT(*) AS n FROM work_orders WHERE status = 'Completed'`)).n;
+  const workOrdersOnHold = (await get(`SELECT COUNT(*) AS n FROM work_orders WHERE status = 'On Hold'`)).n;
   const onTimeDeliveryRate = shipmentsTotal > 0
-    ? Math.round((db.prepare(`SELECT COUNT(*) AS n FROM shipments s JOIN work_orders w ON w.id = s.work_order_id WHERE s.status = 'Delivered' AND s.ship_date <= w.due_date`).get().n / shipmentsTotal) * 100)
+    ? Math.round(((await get(`SELECT COUNT(*) AS n FROM shipments s JOIN work_orders w ON w.id = s.work_order_id WHERE s.status = 'Delivered' AND s.ship_date <= w.due_date`)).n / shipmentsTotal) * 100)
     : 100;
 
-  const revenueByMonth = db.prepare(`
+  const revenueByMonth = await all(`
     SELECT substr(issue_date, 1, 7) AS month, COALESCE(SUM(amount), 0) AS revenue, COUNT(*) AS invoice_count
     FROM invoices GROUP BY month ORDER BY month
-  `).all();
+  `);
 
-  const inspectionResults = db.prepare(`
+  const inspectionResults = await all(`
     SELECT result, COUNT(*) AS count FROM quality_inspections GROUP BY result
-  `).all();
+  `);
 
-  const revenueByCustomer = db.prepare(`
+  const revenueByCustomer = await all(`
     SELECT c.name AS customer_name, c.industry, COALESCE(SUM(i.amount), 0) AS revenue, COUNT(i.id) AS invoice_count
     FROM customers c LEFT JOIN invoices i ON i.customer_id = c.id
     GROUP BY c.id ORDER BY revenue DESC
-  `).all();
+  `);
 
-  const poStatusBreakdown = db.prepare(`
+  const poStatusBreakdown = await all(`
     SELECT status, COUNT(*) AS count, COALESCE(SUM(total_amount), 0) AS amount FROM purchase_orders GROUP BY status
-  `).all();
+  `);
 
-  const quoteCount = db.prepare(`SELECT COUNT(*) AS n FROM quotes`).get().n;
-  const acceptedQuotes = db.prepare(`SELECT COUNT(*) AS n FROM quotes WHERE status = 'Accepted'`).get().n;
+  const quoteCount = (await get(`SELECT COUNT(*) AS n FROM quotes`)).n;
+  const acceptedQuotes = (await get(`SELECT COUNT(*) AS n FROM quotes WHERE status = 'Accepted'`)).n;
   const quoteAcceptRate = quoteCount > 0 ? Math.round((acceptedQuotes / quoteCount) * 100) : 0;
 
   res.json({
@@ -794,7 +794,7 @@ app.get('/api/reports', (req, res) => {
     revenueByMonth, inspectionResults, revenueByCustomer, poStatusBreakdown,
     quoteCount, acceptedQuotes, quoteAcceptRate,
   });
-});
+}));
 
 // Serve the built React app for every non-API route. Placed after all
 // /api/* routes above so it only ever catches page loads, never API calls.
@@ -803,6 +803,13 @@ app.get(/^(?!\/api).*/, (_req, res) => {
   res.sendFile(path.join(CLIENT_DIST, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Anvil API listening on http://localhost:${PORT}`);
-});
+initSchema()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Anvil API listening on http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialize database schema:', err);
+    process.exit(1);
+  });

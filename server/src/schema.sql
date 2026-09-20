@@ -3,7 +3,7 @@
 -- RFQ -> Quote -> Bill of Materials -> Purchase Orders -> Work Orders -> Quality Inspection -> Shipment -> Invoice
 
 CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT NOT NULL,
   role TEXT NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS customers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   industry TEXT NOT NULL,
   address TEXT NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 
 CREATE TABLE IF NOT EXISTS rfqs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   title TEXT NOT NULL,
   description TEXT,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS rfqs (
 );
 
 CREATE TABLE IF NOT EXISTS quotes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   rfq_id INTEGER REFERENCES rfqs(id),
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   quote_number TEXT NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS quotes (
 );
 
 CREATE TABLE IF NOT EXISTS bill_of_materials (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   quote_id INTEGER NOT NULL REFERENCES quotes(id),
   part_name TEXT NOT NULL,
   material TEXT NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS bill_of_materials (
 );
 
 CREATE TABLE IF NOT EXISTS suppliers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   specialty TEXT NOT NULL,
   contact_name TEXT NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
 );
 
 CREATE TABLE IF NOT EXISTS purchase_orders (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
   po_number TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
 );
 
 CREATE TABLE IF NOT EXISTS work_orders (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   quote_id INTEGER REFERENCES quotes(id),
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   work_order_number TEXT NOT NULL,
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
 );
 
 CREATE TABLE IF NOT EXISTS quality_inspections (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   work_order_id INTEGER NOT NULL REFERENCES work_orders(id),
   inspector_user_id INTEGER NOT NULL REFERENCES users(id),
   inspection_date TEXT NOT NULL,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS quality_inspections (
 );
 
 CREATE TABLE IF NOT EXISTS shipments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   work_order_id INTEGER NOT NULL REFERENCES work_orders(id),
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   ship_date TEXT,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS shipments (
 );
 
 CREATE TABLE IF NOT EXISTS invoices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   work_order_id INTEGER NOT NULL REFERENCES work_orders(id),
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   invoice_number TEXT NOT NULL,
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 
 CREATE TABLE IF NOT EXISTS activities (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   type TEXT NOT NULL,
   subject TEXT NOT NULL,
   related_type TEXT,
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS activities (
 );
 
 CREATE TABLE IF NOT EXISTS automations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   trigger_desc TEXT NOT NULL,
   action_desc TEXT NOT NULL,
