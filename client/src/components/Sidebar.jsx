@@ -41,6 +41,7 @@ const NAV = [
     section: 'System',
     items: [
       { to: '/automations', label: 'Automations', icon: 'automation' },
+      { to: '/whatsapp', label: 'WhatsApp', icon: 'whatsapp' },
       { to: '/reports', label: 'Reports', icon: 'reports' },
       { to: '/settings', label: 'Settings', icon: 'settings' },
     ],

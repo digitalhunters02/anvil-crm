@@ -13,6 +13,7 @@ import Invoices from './pages/Invoices.jsx';
 import Automations from './pages/Automations.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
+import WhatsApp from './pages/WhatsApp.jsx';
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/shipments" element={<Shipments />} />
       <Route path="/invoices" element={<Invoices />} />
       <Route path="/automations" element={<Automations />} />
+      <Route path="/whatsapp" element={<WhatsApp />} />
       <Route path="/reports" element={<Reports />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="*" element={<Navigate to="/" replace />} />

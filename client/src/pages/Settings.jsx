@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import api from '../api.js';
+import api, { BASE as API_BASE } from '../api.js';
 import Layout from '../components/Layout.jsx';
 import {
   Card, CardHead, Avatar, Badge, Spinner, Button, IconButton, Field, TextInput, TextArea,
+  Modal, FormError,
 } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
 import { downloadCsv } from '../csv.js';
@@ -44,6 +45,52 @@ function saveJson(key, value) {
   }
 }
 
+function WhatsAppConnectForm({ onCancel, onSubmit, busy }) {
+  const [phoneNumberId, setPhoneNumberId] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [businessAccountId, setBusinessAccountId] = useState('');
+  const [verifyToken, setVerifyToken] = useState('');
+  const [error, setError] = useState('');
+  const webhookUrl = `${API_BASE}/integrations/whatsapp/webhook`;
+
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    try {
+      await onSubmit({ phoneNumberId, accessToken, businessAccountId, verifyToken });
+    } catch (err) {
+      setError(err.message || 'Could not connect WhatsApp.');
+    }
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <FormError error={error} />
+      <Field label="Phone Number ID" required hint="From Meta's WhatsApp Business developer console.">
+        <TextInput required value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="109876543210987" />
+      </Field>
+      <Field label="Access Token" required>
+        <TextInput required type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="EAAG..." />
+      </Field>
+      <Field label="WhatsApp Business Account ID" hint="Optional.">
+        <TextInput value={businessAccountId} onChange={(e) => setBusinessAccountId(e.target.value)} placeholder="1029384756" />
+      </Field>
+      <Field label="Verify Token" hint="Optional — pick any value and use the same one in Meta's webhook setup.">
+        <TextInput value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} placeholder="anvil-secret-token" />
+      </Field>
+      <div className="text-xs text-muted leading-relaxed px-1 pb-3.5">
+        In Meta's console (WhatsApp &rarr; Configuration), paste this callback URL:
+        <br />
+        <span className="font-mono text-ink break-all">{webhookUrl}</span>
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>Cancel</Button>
+        <Button type="submit" disabled={busy}>{busy ? 'Connecting…' : 'Connect'}</Button>
+      </div>
+    </form>
+  );
+}
+
 export default function Settings() {
   const [users, setUsers] = useState(null);
 
@@ -60,6 +107,11 @@ export default function Settings() {
     return loadJson(NOTIF_KEY, defaults);
   });
 
+  const [whatsapp, setWhatsapp] = useState({ connected: false, displayPhone: null });
+  const [whatsappBusy, setWhatsappBusy] = useState(false);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [whatsappError, setWhatsappError] = useState('');
+
   useEffect(() => {
     api.users().then(setUsers);
     try {
@@ -69,6 +121,40 @@ export default function Settings() {
       // ignore
     }
   }, []);
+
+  function refreshWhatsappStatus() {
+    api.whatsappStatus().then(setWhatsapp).catch(() => {});
+  }
+
+  useEffect(refreshWhatsappStatus, []);
+
+  async function toggleWhatsapp() {
+    setWhatsappError('');
+    if (whatsapp.connected) {
+      setWhatsappBusy(true);
+      try {
+        await api.whatsappDisconnect();
+        refreshWhatsappStatus();
+      } catch (e) {
+        setWhatsappError(e.message || "Couldn't disconnect WhatsApp.");
+      } finally {
+        setWhatsappBusy(false);
+      }
+    } else {
+      setWhatsappModalOpen(true);
+    }
+  }
+
+  async function submitWhatsapp(data) {
+    setWhatsappBusy(true);
+    try {
+      await api.whatsappConnect(data);
+      refreshWhatsappStatus();
+      setWhatsappModalOpen(false);
+    } finally {
+      setWhatsappBusy(false);
+    }
+  }
 
   function startEditProfile() {
     setDraftProfile(profile);
@@ -213,6 +299,47 @@ export default function Settings() {
           </div>
         </Card>
 
+        <Card className="p-1">
+          <CardHead
+            title="WhatsApp Business"
+            sub={whatsapp.connected ? whatsapp.displayPhone : 'Connect the shop’s shared WhatsApp number'}
+          />
+          <div className="px-5 pb-5 text-sm">
+            <div className="flex items-center gap-3">
+              <span
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: whatsapp.connected ? '#1FAF54' : '#e6e5e0', color: whatsapp.connected ? '#fff' : '#93969a' }}
+              >
+                <Icon name="whatsapp" size={17} stroke={whatsapp.connected ? '#fff' : '#93969a'} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ink">
+                  {whatsapp.connected ? 'Connected' : 'Not connected'}
+                </p>
+                <p className="text-xs text-muted truncate">
+                  {whatsapp.connected ? whatsapp.displayPhone : 'Paste credentials from Meta’s developer console.'}
+                </p>
+              </div>
+              <Button
+                variant={whatsapp.connected ? 'outline' : 'brand'}
+                size="sm"
+                onClick={toggleWhatsapp}
+                disabled={whatsappBusy}
+              >
+                {whatsappBusy ? '…' : whatsapp.connected ? 'Disconnect' : 'Connect'}
+              </Button>
+            </div>
+            {whatsappError && (
+              <p className="text-sm text-rose bg-roseTint border border-rose/30 rounded-md px-3 py-2 mt-3.5">{whatsappError}</p>
+            )}
+            {whatsapp.connected && (
+              <Button variant="ghost" size="sm" className="mt-3.5" onClick={() => (window.location.hash = '#/whatsapp')}>
+                <Icon name="arrowUpRight" size={13} /> Open WhatsApp conversations
+              </Button>
+            )}
+          </div>
+        </Card>
+
         <Card className="p-1 lg:col-span-2">
           <CardHead title="Notifications" sub="Stored locally in this browser" />
           <div className="divide-y divide-lineSoft">
@@ -248,6 +375,11 @@ export default function Settings() {
           </div>
         </Card>
       </div>
+      {whatsappModalOpen && (
+        <Modal title="Connect WhatsApp Business" onClose={() => setWhatsappModalOpen(false)}>
+          <WhatsAppConnectForm onCancel={() => setWhatsappModalOpen(false)} onSubmit={submitWhatsapp} busy={whatsappBusy} />
+        </Modal>
+      )}
     </Layout>
   );
 }
