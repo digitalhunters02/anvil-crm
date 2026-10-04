@@ -65,7 +65,7 @@ export default function Topbar({ title, count, actions }) {
             {unread && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-brand" />}
           </button>
           {open && (
-            <div className="absolute right-0 top-8 z-40 w-64 bg-surface border border-line rounded-lg shadow-lg py-3 px-4">
+            <div className="fixed inset-x-4 top-[3.75rem] md:absolute md:inset-x-auto md:right-0 md:top-8 z-40 md:w-64 bg-surface border border-line rounded-lg shadow-lg py-3 px-4">
               <p className="text-xs font-semibold text-ink mb-1">Notifications</p>
               <p className="text-xs text-muted">No new notifications.</p>
             </div>

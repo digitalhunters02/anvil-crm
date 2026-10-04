@@ -115,51 +115,92 @@ export function Muted({ children }) {
 }
 
 export function Table({ cols, rows, rowH = 'py-3', keyField = 'id', onRowClick, emptyLabel = 'No records yet.' }) {
+  // On phones and tablets (< lg) every row becomes a card: the first
+  // column is the title, a column with no header (the row actions) sits top-right
+  // and the rest are label/value pairs in two columns. A 7-column table cannot
+  // fit in 320-414px, and a table that scrolls sideways inside the page invites
+  // the whole page to be dragged sideways too. From lg up it stays a table.
+  const primary = 0;
+  const actionIdx = cols.findIndex((c, i) => i > primary && !c.header);
+  const rest = cols.map((c, i) => i).filter((i) => i !== primary && i !== actionIdx);
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse min-w-[720px]">
-        <thead>
-          <tr className="border-b border-line">
-            {cols.map((c) => (
-              <th
-                key={c.key}
-                className={`text-left text-xs font-medium text-muted uppercase tracking-wide px-5 py-2.5 ${c.className || ''}`}
-              >
-                {c.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row[keyField]}
-              className={`border-b border-lineSoft last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-wash' : ''}`}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-            >
+    <>
+      <div className="lg:hidden divide-y divide-lineSoft">
+        {rows.map((row) => (
+          <div
+            key={row[keyField]}
+            className={`px-4 py-3.5 flex flex-col gap-3 min-w-0 ${onRowClick ? 'cursor-pointer active:bg-wash' : ''}`}
+            onClick={onRowClick ? () => onRowClick(row) : undefined}
+          >
+            <div className="flex items-start gap-2 min-w-0">
+              <div className="min-w-0 flex-1 text-sm text-ink">
+                {cols[primary].render ? cols[primary].render(row) : row[cols[primary].key]}
+              </div>
+              {actionIdx >= 0 && (
+                <div className="shrink-0">{cols[actionIdx].render ? cols[actionIdx].render(row) : row[cols[actionIdx].key]}</div>
+              )}
+            </div>
+            {rest.length > 0 && (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                {rest.map((i) => (
+                  <div key={cols[i].key} className="min-w-0">
+                    <div className="text-[10.5px] font-medium text-muted uppercase tracking-wide mb-0.5 truncate">{cols[i].header}</div>
+                    <div className="min-w-0 text-sm text-ink flex items-center gap-1 flex-wrap [overflow-wrap:anywhere] [&>*]:min-w-0 [&>*]:max-w-full">
+                      {cols[i].render ? cols[i].render(row) : row[cols[i].key]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {rows.length === 0 && <div className="px-5 py-8 text-center text-sm text-muted">{emptyLabel}</div>}
+      </div>
+      <div className="hidden lg:block overflow-x-auto h-scroll">
+        <table className="w-full text-sm border-collapse min-w-[720px]">
+          <thead>
+            <tr className="border-b border-line">
               {cols.map((c) => (
-                <td key={c.key} className={`px-5 ${rowH} align-middle ${c.className || ''}`}>
-                  {c.render ? c.render(row) : row[c.key]}
-                </td>
+                <th
+                  key={c.key}
+                  className={`text-left text-xs font-medium text-muted uppercase tracking-wide px-5 py-2.5 ${c.className || ''}`}
+                >
+                  {c.header}
+                </th>
               ))}
             </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={cols.length} className="px-5 py-8 text-center text-sm text-muted">
-                {emptyLabel}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row[keyField]}
+                className={`border-b border-lineSoft last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-wash' : ''}`}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+              >
+                {cols.map((c) => (
+                  <td key={c.key} className={`px-5 ${rowH} align-middle ${c.className || ''}`}>
+                    {c.render ? c.render(row) : row[c.key]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={cols.length} className="px-5 py-8 text-center text-sm text-muted">
+                  {emptyLabel}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
 export function Tabs({ tabs, value, onChange }) {
   return (
-    <div className="inline-flex items-center gap-1 bg-wash rounded-lg p-1">
+    <div className="inline-flex flex-wrap max-w-full items-center gap-1 bg-wash rounded-lg p-1">
       {tabs.map((t) => (
         <button
           key={t.value}
@@ -224,15 +265,15 @@ export function Modal({ title, sub, onClose, children, footer, wide = false }) {
         className={`relative bg-surface rounded-xl border border-line shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}
       >
         <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-line flex-shrink-0">
-          <div>
-            <h3 className="font-head uppercase tracking-wide text-[15px] font-semibold text-ink">{title}</h3>
+          <div className="min-w-0">
+            <h3 className="font-head uppercase tracking-wide text-[15px] font-semibold text-ink [overflow-wrap:anywhere]">{title}</h3>
             {sub && <p className="text-xs text-muted mt-0.5">{sub}</p>}
           </div>
           <button type="button" onClick={onClose} className="text-muted hover:text-ink -mt-1 -mr-1 p-1">
             <Icon name="x" size={18} />
           </button>
         </div>
-        <div className="px-5 py-4 overflow-y-auto">{children}</div>
+        <div className="px-5 py-4 overflow-y-auto [overflow-wrap:anywhere]">{children}</div>
         {footer && <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-line flex-shrink-0">{footer}</div>}
       </div>
     </div>

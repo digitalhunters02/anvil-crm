@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar.jsx';
 import Topbar from './Topbar.jsx';
 import Icon from './Icon.jsx';
@@ -6,8 +6,19 @@ import Icon from './Icon.jsx';
 export default function Layout({ title, count, actions, children }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Lock the page itself: only the content area scrolls (vertically), so the
+  // top bar stays put and nothing can be dragged sideways.
+  useEffect(() => {
+    document.documentElement.classList.add('app-locked');
+    document.body.classList.add('app-locked');
+    return () => {
+      document.documentElement.classList.remove('app-locked');
+      document.body.classList.remove('app-locked');
+    };
+  }, []);
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-bg">
+    <div className="app-shell flex bg-bg">
       {/* Mobile-only fixed top bar with hamburger + brand */}
       <div className="md:hidden fixed top-0 inset-x-0 z-40 h-14 bg-side text-white flex items-center gap-3 px-4 shadow-md">
         <button
@@ -40,9 +51,9 @@ export default function Layout({ title, count, actions, children }) {
 
       <Sidebar open={drawerOpen} onNavigate={() => setDrawerOpen(false)} />
 
-      <div className="flex-1 flex flex-col min-w-0 h-full pt-14 md:pt-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full pt-14 md:pt-0">
         <Topbar title={title} count={count} actions={actions} />
-        <main className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-7 py-5 sm:py-6">{children}</main>
+        <main className="app-content flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-4 sm:px-7 py-5 sm:py-6">{children}</main>
       </div>
     </div>
   );

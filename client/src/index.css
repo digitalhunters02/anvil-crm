@@ -6,6 +6,51 @@ html, body, #root {
   height: 100%;
 }
 
+/* Mobile width guard: the page can never be wider than the screen, and a
+   sideways drag / rubber-band never moves it. Real overflow is fixed at its
+   source (min-w-0, wrapping, card layouts); this is only the safety net. */
+html {
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+/* Vertical scroll + pinch-zoom everywhere, and no sideways pan: a drag that starts
+   on any scrolling box (a card, a list, a modal) can no longer chain into the browser's
+   "swipe back" / rubber-band and make the page sway. Boxes that really scroll
+   sideways (kanban board, wide tables) opt back in with .h-scroll. */
+html, body, :where(#root *) { touch-action: pan-y pinch-zoom; }
+.h-scroll, .h-scroll * { touch-action: pan-x pan-y pinch-zoom; }
+@supports (overflow: clip) {
+  body { overflow-x: clip; }
+}
+#root { max-width: 100%; }
+img, video, canvas { max-width: 100%; }
+/* A form control as a flex/grid child must be allowed to shrink below its
+   default intrinsic width, otherwise it pushes the row off-screen. */
+input, select, textarea { min-width: 0; max-width: 100%; }
+/* iOS Safari zooms the whole page in when you tap a field whose text is under
+   16px, and then the page can be dragged sideways. 16px on touch screens stops
+   that (pinch-zoom itself stays enabled). */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea { font-size: 16px !important; }
+}
+
+/* Logged-in shell: height = the visible screen (dvh, no Safari bar jumping);
+   the page itself is locked and only the content area scrolls, vertically. */
+.app-shell { height: 100vh; height: 100dvh; width: 100%; max-width: 100%; overflow: hidden; }
+html.app-locked, body.app-locked { overflow: hidden; overscroll-behavior: none; }
+body.app-locked { position: fixed; inset: 0; width: 100%; }
+.app-content { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y pinch-zoom; max-width: 100%; }
+
 body {
   background: #eeeeeb;
   color: #1b1c1e;
