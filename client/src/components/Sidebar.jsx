@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import Icon from './Icon.jsx';
 import { Avatar } from './ui.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { useT } from '../auth/i18n.js';
+import { LogOutIcon } from '../auth/AuthIcons.jsx';
 
 const AVATAR_KEY = 'anvil-operator-avatar';
 
@@ -49,6 +52,8 @@ const NAV = [
 ];
 
 export default function Sidebar({ open = false, onNavigate }) {
+  const { account, logout } = useAuth();
+  const { t } = useT();
   const fileRef = useRef(null);
   const [avatar, setAvatar] = useState(null);
 
@@ -143,7 +148,7 @@ export default function Sidebar({ open = false, onNavigate }) {
           {avatar ? (
             <img src={avatar} alt="Operator" width={30} height={30} className="rounded-full object-cover w-[30px] h-[30px]" />
           ) : (
-            <Avatar name="Derek Malone" color="#b3261e" size={30} />
+            <Avatar name={account?.name || 'Anvil'} color="#b3261e" size={30} />
           )}
           <span className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
             <span className="opacity-0 group-hover:opacity-100 transition-opacity">
@@ -152,10 +157,20 @@ export default function Sidebar({ open = false, onNavigate }) {
           </span>
         </button>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
-        <div className="min-w-0 flex-grow">
-          <p className="text-[13px] font-medium text-white truncate">Derek Malone</p>
-          <p className="text-[11px] text-sideMuted truncate">VP of Operations</p>
-        </div>
+        <NavLink to="/settings" onClick={onNavigate} title={t('accountTitle')} className="min-w-0 flex-grow">
+          <p className="text-[13px] font-medium text-white truncate">{account?.name}</p>
+          <p className="text-[11px] text-sideMuted truncate">{account?.role === 'owner' ? t('owner') : t('staff')}</p>
+        </NavLink>
+        <button
+          type="button"
+          onClick={logout}
+          title={t('signOut')}
+          aria-label={t('signOut')}
+          data-testid="signout"
+          className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-sideText hover:bg-side2 hover:text-white transition-colors"
+        >
+          <LogOutIcon />
+        </button>
       </div>
     </aside>
   );

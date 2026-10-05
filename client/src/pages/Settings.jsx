@@ -7,6 +7,8 @@ import {
 } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
 import { downloadCsv } from '../csv.js';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { MyAccountCard, StaffCard } from '../auth/AccountPanel.jsx';
 
 const PROFILE_KEY = 'anvil-company-profile';
 const LOGO_KEY = 'anvil-company-logo';
@@ -92,6 +94,7 @@ function WhatsAppConnectForm({ onCancel, onSubmit, busy }) {
 }
 
 export default function Settings() {
+  const { account } = useAuth();
   const [users, setUsers] = useState(null);
 
   const [profile, setProfile] = useState(() => loadJson(PROFILE_KEY, DEFAULT_PROFILE));
@@ -215,6 +218,8 @@ export default function Settings() {
   return (
     <Layout title="Settings">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <MyAccountCard />
+        {account?.role === 'owner' && <StaffCard />}
         <Card className="p-1">
           <CardHead
             title="Company Profile"
