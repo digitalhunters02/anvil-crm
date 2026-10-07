@@ -17,6 +17,10 @@ import WhatsApp from './pages/WhatsApp.jsx';
 import Login from './pages/Login.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import { Terms, Privacy } from './pages/Legal.jsx';
+import Inventory from './pages/Inventory.jsx';
+import Shortages from './pages/Shortages.jsx';
+import Costing from './pages/Costing.jsx';
+import ProductionCalendar from './pages/ProductionCalendar.jsx';
 import PlanGate from './plans/PlanGate.jsx';
 import { useAuth } from './auth/AuthContext.jsx';
 import ForcedPasswordChange from './auth/ForcedPasswordChange.jsx';
@@ -57,6 +61,10 @@ export default function App() {
       <Route path="/work-orders" element={<PlanGate feature="work_orders" title="Work Orders"><WorkOrders /></PlanGate>} />
       <Route path="/bill-of-materials" element={<PlanGate feature="bill_of_materials" title="Bill of Materials"><BillOfMaterials /></PlanGate>} />
       <Route path="/quality-inspections" element={<PlanGate feature="quality_inspections" title="Quality Inspections"><QualityInspections /></PlanGate>} />
+      <Route path="/inventory" element={<PlanGate feature="inventory" title="Inventory"><Inventory /></PlanGate>} />
+      <Route path="/shortages" element={<PlanGate feature="mrp" title="Shortages & Buying"><Shortages /></PlanGate>} />
+      <Route path="/costing" element={<PlanGate feature="job_costing" title="Job Costing"><Costing /></PlanGate>} />
+      <Route path="/calendar" element={<PlanGate feature="production_calendar" title="Production Calendar"><ProductionCalendar /></PlanGate>} />
       <Route path="/suppliers" element={<Suppliers />} />
       <Route path="/purchase-orders" element={<PlanGate feature="purchase_orders" title="Purchase Orders"><PurchaseOrders /></PlanGate>} />
       <Route path="/shipments" element={<PlanGate feature="shipments" title="Shipments"><Shipments /></PlanGate>} />

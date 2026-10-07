@@ -18,12 +18,20 @@ export const FEATURE_MIN_PLAN = {
   work_orders: 'essencial',
   shipments: 'essencial',
   reports: 'essencial',
+  inventory: 'essencial',
+  mrp: 'completo',
+  job_costing: 'completo',
+  production_calendar: 'completo',
   quality_inspections: 'completo',
   automations: 'completo',
   whatsapp: 'completo',
 };
 // Rotas da API protegidas por plano: [prefixo, recurso]. Valem só depois do login.
 export const API_GATES = [
+  ['/api/inventory', 'inventory'],
+  ['/api/mrp', 'mrp'],
+  ['/api/costing', 'job_costing'],
+  ['/api/calendar', 'production_calendar'],
   ['/api/rfqs', 'rfqs'],
   ['/api/purchase-orders', 'purchase_orders'],
   ['/api/bill-of-materials', 'bill_of_materials'],

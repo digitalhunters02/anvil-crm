@@ -14,10 +14,13 @@ const BULLETS = {
     "Everything in Essential",
     "RFQs, purchase orders and bill of materials",
     "Work orders and shipments",
+    "Inventory with lots and barcodes",
     "Reports"
   ],
   "completo": [
     "Everything in Professional",
+    "Shortages and one-click purchase orders",
+    "Job costing and production calendar",
     "Quality inspections",
     "Automations and WhatsApp"
   ]

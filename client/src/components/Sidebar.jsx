@@ -25,12 +25,16 @@ const NAV = [
     items: [
       { to: '/work-orders', label: 'Work Orders', icon: 'workOrder', feature: 'work_orders' },
       { to: '/bill-of-materials', label: 'Bill of Materials', icon: 'bom', feature: 'bill_of_materials' },
+      { to: '/calendar', label: 'Production Calendar', icon: 'clock', feature: 'production_calendar' },
+      { to: '/costing', label: 'Job Costing', icon: 'gauge', feature: 'job_costing' },
       { to: '/quality-inspections', label: 'Quality Inspections', icon: 'quality', feature: 'quality_inspections' },
     ],
   },
   {
     section: 'Supply Chain',
     items: [
+      { to: '/inventory', label: 'Inventory', icon: 'material', feature: 'inventory' },
+      { to: '/shortages', label: 'Shortages & Buying', icon: 'spark', feature: 'mrp' },
       { to: '/suppliers', label: 'Suppliers', icon: 'supplier' },
       { to: '/purchase-orders', label: 'Purchase Orders', icon: 'purchaseOrder', feature: 'purchase_orders' },
     ],

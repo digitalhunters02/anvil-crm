@@ -10,6 +10,7 @@ import { publicAuthRoutes, accountRoutes } from './authRoutes.js';
 import { mountAdminSummary } from './adminSummary.js';
 import * as billing from './billing.js';
 import { mountBillingWebhook, mountBilling } from './billingRoutes.js';
+import { mountAnvilPro } from './anvilPro.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
@@ -94,6 +95,7 @@ accountRoutes(app, ar);
 // Plano e cobrança: status para todos, escolher plano só o dono; depois, as barreiras por plano de cada rota.
 mountBilling(app, ar, requireOwner);
 app.use(billing.planGates());
+mountAnvilPro(app);
 
 // -------------------- helpers --------------------
 function missingField(body, fields) {

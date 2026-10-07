@@ -194,3 +194,42 @@ CREATE TABLE IF NOT EXISTS subscription (
   stripe_subscription_id TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Recursos pro (Essencial/Completo): estoque com lote e código de barras, compra do que falta, custeio, agenda de produção
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id SERIAL PRIMARY KEY,
+  sku TEXT NOT NULL,
+  name TEXT NOT NULL,
+  material TEXT NOT NULL DEFAULT '',
+  uom TEXT NOT NULL DEFAULT 'ea',
+  min_stock REAL NOT NULL DEFAULT 0,
+  unit_cost REAL NOT NULL DEFAULT 0,
+  location TEXT NOT NULL DEFAULT '',
+  barcode TEXT,
+  tracking TEXT NOT NULL DEFAULT 'none',
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS inventory_items_sku_uq ON inventory_items (lower(sku));
+CREATE UNIQUE INDEX IF NOT EXISTS inventory_items_barcode_uq ON inventory_items (lower(barcode)) WHERE barcode IS NOT NULL AND barcode <> '';
+
+CREATE TABLE IF NOT EXISTS stock_moves (
+  id SERIAL PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+  qty REAL NOT NULL,
+  reason TEXT NOT NULL,
+  lot TEXT,
+  work_order_id INTEGER REFERENCES work_orders(id) ON DELETE SET NULL,
+  unit_cost REAL NOT NULL DEFAULT 0,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS stock_moves_item_idx ON stock_moves (item_id);
+
+CREATE TABLE IF NOT EXISTS work_order_labor (
+  id SERIAL PRIMARY KEY,
+  work_order_id INTEGER NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+  work_date TEXT NOT NULL,
+  hours REAL NOT NULL,
+  rate REAL NOT NULL,
+  note TEXT
+);
