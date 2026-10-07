@@ -17,6 +17,7 @@ import WhatsApp from './pages/WhatsApp.jsx';
 import Login from './pages/Login.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import { Terms, Privacy } from './pages/Legal.jsx';
+import PlanGate from './plans/PlanGate.jsx';
 import { useAuth } from './auth/AuthContext.jsx';
 import ForcedPasswordChange from './auth/ForcedPasswordChange.jsx';
 import { useT } from './auth/i18n.js';
@@ -50,19 +51,19 @@ export default function App() {
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/" element={<Dashboard />} />
-      <Route path="/rfqs" element={<Rfqs />} />
+      <Route path="/rfqs" element={<PlanGate feature="rfqs" title="RFQs"><Rfqs /></PlanGate>} />
       <Route path="/quotes" element={<Quotes />} />
       <Route path="/customers" element={<Customers />} />
-      <Route path="/work-orders" element={<WorkOrders />} />
-      <Route path="/bill-of-materials" element={<BillOfMaterials />} />
-      <Route path="/quality-inspections" element={<QualityInspections />} />
+      <Route path="/work-orders" element={<PlanGate feature="work_orders" title="Work Orders"><WorkOrders /></PlanGate>} />
+      <Route path="/bill-of-materials" element={<PlanGate feature="bill_of_materials" title="Bill of Materials"><BillOfMaterials /></PlanGate>} />
+      <Route path="/quality-inspections" element={<PlanGate feature="quality_inspections" title="Quality Inspections"><QualityInspections /></PlanGate>} />
       <Route path="/suppliers" element={<Suppliers />} />
-      <Route path="/purchase-orders" element={<PurchaseOrders />} />
-      <Route path="/shipments" element={<Shipments />} />
+      <Route path="/purchase-orders" element={<PlanGate feature="purchase_orders" title="Purchase Orders"><PurchaseOrders /></PlanGate>} />
+      <Route path="/shipments" element={<PlanGate feature="shipments" title="Shipments"><Shipments /></PlanGate>} />
       <Route path="/invoices" element={<Invoices />} />
-      <Route path="/automations" element={<Automations />} />
-      <Route path="/whatsapp" element={<WhatsApp />} />
-      <Route path="/reports" element={<Reports />} />
+      <Route path="/automations" element={<PlanGate feature="automations" title="Automations"><Automations /></PlanGate>} />
+      <Route path="/whatsapp" element={<PlanGate feature="whatsapp" title="WhatsApp"><WhatsApp /></PlanGate>} />
+      <Route path="/reports" element={<PlanGate feature="reports" title="Reports"><Reports /></PlanGate>} />
       <Route path="/settings" element={<Settings />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

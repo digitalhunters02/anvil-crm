@@ -5,6 +5,8 @@ import { Avatar } from './ui.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT } from '../auth/i18n.js';
 import { LogOutIcon } from '../auth/AuthIcons.jsx';
+import { usePlan } from '../plans/PlanContext.jsx';
+import { LockIcon } from '../plans/PlanGate.jsx';
 
 const AVATAR_KEY = 'anvil-operator-avatar';
 
@@ -13,7 +15,7 @@ const NAV = [
   {
     section: 'Sales',
     items: [
-      { to: '/rfqs', label: 'RFQs', icon: 'rfq' },
+      { to: '/rfqs', label: 'RFQs', icon: 'rfq', feature: 'rfqs' },
       { to: '/quotes', label: 'Quotes', icon: 'quote' },
       { to: '/customers', label: 'Customers', icon: 'customers' },
     ],
@@ -21,31 +23,31 @@ const NAV = [
   {
     section: 'Production',
     items: [
-      { to: '/work-orders', label: 'Work Orders', icon: 'workOrder' },
-      { to: '/bill-of-materials', label: 'Bill of Materials', icon: 'bom' },
-      { to: '/quality-inspections', label: 'Quality Inspections', icon: 'quality' },
+      { to: '/work-orders', label: 'Work Orders', icon: 'workOrder', feature: 'work_orders' },
+      { to: '/bill-of-materials', label: 'Bill of Materials', icon: 'bom', feature: 'bill_of_materials' },
+      { to: '/quality-inspections', label: 'Quality Inspections', icon: 'quality', feature: 'quality_inspections' },
     ],
   },
   {
     section: 'Supply Chain',
     items: [
       { to: '/suppliers', label: 'Suppliers', icon: 'supplier' },
-      { to: '/purchase-orders', label: 'Purchase Orders', icon: 'purchaseOrder' },
+      { to: '/purchase-orders', label: 'Purchase Orders', icon: 'purchaseOrder', feature: 'purchase_orders' },
     ],
   },
   {
     section: 'Fulfillment',
     items: [
-      { to: '/shipments', label: 'Shipments', icon: 'shipment' },
+      { to: '/shipments', label: 'Shipments', icon: 'shipment', feature: 'shipments' },
       { to: '/invoices', label: 'Invoices', icon: 'invoice' },
     ],
   },
   {
     section: 'System',
     items: [
-      { to: '/automations', label: 'Automations', icon: 'automation' },
-      { to: '/whatsapp', label: 'WhatsApp', icon: 'whatsapp' },
-      { to: '/reports', label: 'Reports', icon: 'reports' },
+      { to: '/automations', label: 'Automations', icon: 'automation', feature: 'automations' },
+      { to: '/whatsapp', label: 'WhatsApp', icon: 'whatsapp', feature: 'whatsapp' },
+      { to: '/reports', label: 'Reports', icon: 'reports', feature: 'reports' },
       { to: '/settings', label: 'Settings', icon: 'settings' },
     ],
   },
@@ -54,6 +56,7 @@ const NAV = [
 export default function Sidebar({ open = false, onNavigate }) {
   const { account, logout } = useAuth();
   const { t } = useT();
+  const { allows } = usePlan();
   const fileRef = useRef(null);
   const [avatar, setAvatar] = useState(null);
 
@@ -129,6 +132,7 @@ export default function Sidebar({ open = false, onNavigate }) {
                       )}
                       <Icon name={item.icon} size={16} stroke={isActive ? '#e08c82' : '#83868a'} />
                       {item.label}
+                      {item.feature && !allows(item.feature) && <LockIcon size={12} className="ml-auto text-sideMuted" />}
                     </>
                   )}
                 </NavLink>
