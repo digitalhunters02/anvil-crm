@@ -119,8 +119,8 @@ export function makeLimiter({ windowMs, max }) {
 
 // ---------- owner bootstrap (idempotent) ----------
 // Creates the owner at boot from BOOTSTRAP_OWNER_EMAIL / _PASSWORD when no
-// account with that email exists. It never touches an existing account, so a
-// password changed later in the app is never overwritten by the env value.
+// account with that email exists. It never touches an existing account (unless
+// BOOTSTRAP_OWNER_RESET=1, see below), so a password changed later in the app is never overwritten by the env value.
 export async function bootstrapOwner() {
   const email = normalizeEmail(process.env.BOOTSTRAP_OWNER_EMAIL);
   const password = process.env.BOOTSTRAP_OWNER_PASSWORD || '';
@@ -137,7 +137,16 @@ export async function bootstrapOwner() {
     console.error(`BOOTSTRAP_OWNER_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters: bootstrap skipped.`);
     return;
   }
-  if (await accountByEmail(email)) {
+  const existing = await accountByEmail(email);
+  // Access recovery: with BOOTSTRAP_OWNER_RESET=1 an account that already exists gets BOOTSTRAP_OWNER_PASSWORD as its
+  // password and open sessions are revoked (token_version). Only someone who controls the server variables can do this.
+  // Remove the variable after signing in, or every restart repeats it.
+  if (existing && process.env.BOOTSTRAP_OWNER_RESET === '1') {
+    await run(`UPDATE accounts SET password_hash = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2`, [hashPassword(password), existing.id]);
+    console.log(`bootstrap owner: password reset for ${email}. Remove BOOTSTRAP_OWNER_RESET now, or every restart repeats it`);
+    return;
+  }
+  if (existing) {
     console.log(`bootstrap owner already exists for ${email}`);
     return;
   }
