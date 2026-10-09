@@ -283,6 +283,21 @@ test('bootstrap is idempotent: restart with a different env password keeps the r
   await again.stop();
 });
 
+test('BOOTSTRAP_OWNER_RESET=1 sets a new password on the existing owner and revokes old sessions', async () => {
+  const login = await startServer({ BOOTSTRAP_OWNER_PASSWORD: 'Different-env-pass-9' });
+  const old = await login.call('POST', '/api/auth/login', { body: { email: OWNER_EMAIL, password: 'Changed-pass-123' } });
+  assert.equal(old.status, 200);
+  await login.stop();
+  const NEW = 'Reset-env-pass-77';
+  const s = await startServer({ BOOTSTRAP_OWNER_PASSWORD: NEW, BOOTSTRAP_OWNER_RESET: '1' });
+  assert.match(s.logs(), new RegExp(`password reset for ${OWNER_EMAIL}`));
+  assert.ok(!s.logs().includes(NEW), 'password must never be logged');
+  assert.equal((await s.call('POST', '/api/auth/login', { body: { email: OWNER_EMAIL, password: 'Changed-pass-123' } })).status, 401);
+  assert.equal((await s.call('POST', '/api/auth/login', { body: { email: OWNER_EMAIL, password: NEW } })).status, 200);
+  assert.equal((await s.call('GET', '/api/auth/me', { token: old.json.token })).status, 401, 'old session revoked');
+  await s.stop();
+});
+
 test('WHATSAPP_APP_SECRET (optional) enforces Meta signatures on POST only', async () => {
   const crypto = await import('node:crypto');
   const s = await startServer({ WHATSAPP_APP_SECRET: 'meta-app-secret' });
