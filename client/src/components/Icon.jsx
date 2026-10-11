@@ -1,6 +1,10 @@
 // Hand-rolled inline-SVG icon set for Anvil. No icon library — each icon is
 // a small array of primitive shape descriptors rendered onto a 24x24 grid.
 const ICONS = {
+  camera: [
+    ['path', 'M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z'],
+    ['circle', 12, 13, 4],
+  ],
   dashboard: [
     ['rect', 3, 3, 7, 11, 1.5],
     ['rect', 14, 3, 7, 6, 1.5],
