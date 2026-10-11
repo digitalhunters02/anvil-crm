@@ -4,3 +4,5 @@ dist/
 *.db-shm
 *.db-wal
 .DS_Store
+research_notes/
+reports/
