@@ -20,6 +20,10 @@ export const normalizeInterval = (v) => (v === 'year' ? 'year' : 'month');
 export const isConfigured = () => !!process.env.STRIPE_SECRET_KEY;
 export const annualPrice = (plan) => Math.round(PLAN_PRICES[plan] * 12 * (1 - ANNUAL_DISCOUNT));
 
+// Todos os produtos da Impact Digital usam a MESMA conta do Stripe, e o Stripe manda cada evento a todos os
+// webhooks cadastrados. Cada checkout leva a etiqueta do produto e cada webhook ignora o que é de outro produto.
+export const PRODUCT = 'anvil';
+
 function priceIdFor(plan, interval = 'month') {
   const table = normalizeInterval(interval) === 'year' ? YEARLY_PRICE_ENV_BY_PLAN : PRICE_ENV_BY_PLAN;
   return table[plan] ? process.env[table[plan]] : null;
@@ -164,6 +168,7 @@ export async function createCheckoutSession(plan, { frontendBaseUrl, interval = 
   for (const prefix of ['metadata', 'subscription_data[metadata]']) {
     params.append(`${prefix}[plan]`, plan);
     params.append(`${prefix}[interval]`, interval);
+    params.append(`${prefix}[product]`, PRODUCT);
   }
   return (await stripeRequest('checkout/sessions', params)).url;
 }
@@ -227,6 +232,8 @@ export async function handleWebhook(rawBody, signatureHeader) {
   const obj = event.data?.object;
   if (!obj) return;
   if (event.type === 'checkout.session.completed') {
+    // evento de outro produto da mesma conta do Stripe: não é nosso
+    if (obj.metadata?.product && obj.metadata.product !== PRODUCT) return;
     let plan = obj.metadata?.plan;
     if (!plan) {
       try {
@@ -234,6 +241,7 @@ export async function handleWebhook(rawBody, signatureHeader) {
         plan = planFromPriceId(li.data?.[0]?.price?.id);
       } catch { /* cai no plano de entrada abaixo */ }
     }
+    if (!obj.metadata?.product && !plan) return; // sem etiqueta e com preço desconhecido: não é deste produto
     await run(
       `INSERT INTO subscription (id, plan, status, stripe_customer_id, stripe_subscription_id, updated_at)
        VALUES (1, $1, 'active', $2, $3, now())
@@ -241,6 +249,7 @@ export async function handleWebhook(rawBody, signatureHeader) {
       [PLAN_RANK[plan] ? plan : 'basico', obj.customer, obj.subscription]
     );
   } else if (event.type === 'customer.subscription.updated') {
+    if (obj.metadata?.product && obj.metadata.product !== PRODUCT) return;
     const plan = obj.metadata?.plan || planFromPriceId(obj.items?.data?.[0]?.price?.id);
     await run(`UPDATE subscription SET plan = COALESCE($1, plan), status = $2, updated_at = now() WHERE stripe_subscription_id = $3`, [PLAN_RANK[plan] ? plan : null, obj.status, obj.id]);
   } else if (event.type === 'customer.subscription.deleted') {

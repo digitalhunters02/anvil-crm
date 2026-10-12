@@ -150,6 +150,16 @@ test('Stripe: checkout, webhook assinado, upgrade, cancelamento e resumo do Harb
   assert.equal(sum.status, 200); assert.equal(sum.json.billingEnabled, true);
   assert.equal(sum.json.subscribers[0].plan, 'essencial'); assert.equal(sum.json.subscribers[0].amount, 12900 / 100);
 
+  // etiqueta de produto: a conta do Stripe é a mesma para todos os produtos; evento de OUTRO produto é ignorado
+  const planNow = async () => (await s.call('GET', '/api/billing/status', { token: s.token })).json.plan;
+  assert.equal((await hook({ type: 'checkout.session.completed', data: { object: { id: 'cs_x', customer: 'cus_x', subscription: 'sub_x', metadata: { plan: 'completo', interval: 'year', product: 'binder' } } } })).status, 200);
+  assert.equal(await planNow(), 'essencial', 'checkout de outro produto não muda o plano');
+  assert.equal((await hook({ type: 'checkout.session.completed', data: { object: { id: 'cs_y', customer: 'cus_y', subscription: 'sub_y', metadata: {} } } })).status, 200);
+  assert.equal(await planNow(), 'essencial', 'sem etiqueta e sem plano conhecido: ignorado');
+  assert.equal((await hook({ type: 'customer.subscription.updated', data: { object: { id: 'sub_1', status: 'canceled', metadata: { product: 'binder', plan: 'basico' } } } })).status, 200);
+  assert.equal(await planNow(), 'essencial', 'atualização de outro produto não mexe na assinatura');
+  assert.match(fake.checkout[0], /metadata\[product\]=anvil/); assert.match(fake.checkout[0], /subscription_data\[metadata\]\[product\]=anvil/);
+
   // upgrade pelo Stripe → completo; cancelamento → volta ao plano de entrada
   const up = { type: 'customer.subscription.updated', data: { object: { id: 'sub_1', status: 'active', metadata: { plan: 'completo' }, items: { data: [{ price: { id: 'price_c' } }] } } } };
   assert.equal((await hook(up)).status, 200);
