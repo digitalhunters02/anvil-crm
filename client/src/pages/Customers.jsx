@@ -6,6 +6,7 @@ import {
   Field, TextInput, TextArea, SelectInput, FormGrid, FormError, RowActions,
 } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
+import PhotoImportButton from '../components/PhotoImportButton.jsx';
 import { downloadCsv } from '../csv.js';
 
 const TONE = { Active: 'green', Prospect: 'blue', Inactive: 'neutral' };
@@ -178,6 +179,26 @@ export default function Customers() {
       actions={
         <>
           <Button variant="outline" onClick={handleExport}><Icon name="download" size={15} /> Export</Button>
+          <PhotoImportButton
+            kind="clients" title="Import customers from a photo" onImported={load}
+            fields={[
+              { key: 'name', label: 'Company / name' }, { key: 'phone', label: 'photo.f.phone' }, { key: 'email', label: 'photo.f.email' },
+              { key: 'address', label: 'photo.f.address', wide: true }, { key: 'notes', label: 'photo.f.notes', wide: true },
+            ]}
+            validate={(r) => (String(r.name || '').trim() ? '' : 'photo.missingName')}
+            toPayload={(r) => ({ name: r.name.trim(), phone: r.phone || '', email: r.email || '', address: r.address || '', notes: r.notes || '' })}
+            onSave={async (b) => {
+              const users = await api.users();
+              if (!users?.length) throw new Error('Add a sales rep first (Settings → Team).');
+              // City/state are required by the customer record: read them from "..., City, ST 12345" when present, otherwise edit later.
+              const m = b.address.match(/,\s*([^,]+?),?\s+([A-Z]{2})\b[\s\d-]*$/);
+              await api.createCustomer({
+                name: b.name, industry: 'Other', address: b.address || '—', city: m ? m[1].trim() : '—', state: m ? m[2] : '—',
+                contact_name: b.name, contact_email: b.email || 'not-provided@example.com', contact_phone: b.phone || '—',
+                owner_user_id: users[0].id, status: 'Prospect', notes: b.notes || null,
+              });
+            }}
+          />
           <Button onClick={openCreate}><Icon name="plus" size={15} /> New Customer</Button>
         </>
       }

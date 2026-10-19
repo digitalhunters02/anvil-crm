@@ -6,6 +6,7 @@ import {
   Field, TextInput, TextArea, FormGrid, FormError, RowActions,
 } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
+import PhotoImportButton from '../components/PhotoImportButton.jsx';
 import { downloadCsv } from '../csv.js';
 
 const EMPTY = { name: '', specialty: '', contact_name: '', contact_email: '', contact_phone: '', lead_time_days: '', notes: '' };
@@ -147,6 +148,19 @@ export default function Suppliers() {
       actions={
         <>
           <Button variant="outline" onClick={handleExport}><Icon name="download" size={15} /> Export</Button>
+          <PhotoImportButton
+            kind="clients" title="Import suppliers from a photo" onImported={load}
+            fields={[
+              { key: 'name', label: 'Company / name' }, { key: 'phone', label: 'photo.f.phone' }, { key: 'email', label: 'photo.f.email' },
+              { key: 'notes', label: 'photo.f.notes', wide: true },
+            ]}
+            validate={(r) => (String(r.name || '').trim() ? '' : 'photo.missingName')}
+            toPayload={(r) => ({ name: r.name.trim(), phone: r.phone || '', email: r.email || '', notes: r.notes || '' })}
+            onSave={(b) => api.createSupplier({
+              name: b.name, specialty: 'General', contact_name: b.name, contact_email: b.email || 'not-provided@example.com',
+              contact_phone: b.phone || '—', lead_time_days: 14, notes: b.notes || null,
+            })}
+          />
           <Button onClick={openCreate}><Icon name="plus" size={15} /> New Supplier</Button>
         </>
       }
