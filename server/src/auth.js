@@ -5,6 +5,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { get, run } from './db.js';
+import { applyPreview } from './previewPlan.js';
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -79,7 +80,8 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Invalid or expired session' });
     }
     req.account = account;
-    next();
+    // Dono da plataforma vendo o produto como outro plano: só para OWNER_EMAILS, nunca muda a conta (previewPlan.js).
+    return applyPreview(req, account, next);
   } catch (e) {
     next(e);
   }

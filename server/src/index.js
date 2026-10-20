@@ -9,6 +9,7 @@ import { requireAuth, requireOwner, bootstrapOwner } from './auth.js';
 import { publicAuthRoutes, accountRoutes } from './authRoutes.js';
 import { mountAdminSummary } from './adminSummary.js';
 import * as billing from './billing.js';
+import { blockInPreview } from './previewPlan.js';
 import { mountBillingWebhook, mountBilling } from './billingRoutes.js';
 import { mountAnvilPro } from './anvilPro.js';
 import { createPhotoImportRouter, initPhotoImportSchema, startPhotoBilling } from './photoImportRouter.js';
@@ -100,7 +101,7 @@ app.use(billing.planGates());
 mountAnvilPro(app);
 // "Importar de foto" (AI reads a photo/print, the person reviews before saving) + extra use by credits.
 app.use('/api/photo-import', createPhotoImportRouter({
-  pool, requireAuth, requireAdmin: requireOwner,
+  pool, requireAuth, requireAdmin: (req, res, next) => requireOwner(req, res, () => blockInPreview(req, res, next)),
   effectivePlan: billing.effectivePlan, getSubscription: billing.getSubscription,
   planLimits: { basico: 0, essencial: 100, completo: 500 },
   kindsOpts: { contactTypes: ['business'], disableKinds: ['leads', 'expense'], clientsPage: 'customers' },

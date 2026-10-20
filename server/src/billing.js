@@ -4,6 +4,8 @@
 // grava LICENSED_PLAN com esses nomes; o nome mostrado na tela vem de planConfig.js.
 import crypto from 'node:crypto';
 import { get, run } from './db.js';
+import { store } from './owner.js';
+import { makeGates } from './planGates.js';
 import { PLAN_RANK, PLAN_LABELS, PLAN_PRICES, PLAN_USER_LIMITS, FEATURE_MIN_PLAN, API_GATES, PLAN_EXTRA_LIMITS } from './planConfig.js';
 
 export { PLAN_RANK, PLAN_LABELS, PLAN_PRICES, PLAN_USER_LIMITS, FEATURE_MIN_PLAN };
@@ -23,6 +25,30 @@ export const annualPrice = (plan) => Math.round(PLAN_PRICES[plan] * 12 * (1 - AN
 // Todos os produtos da Impact Digital usam a MESMA conta do Stripe, e o Stripe manda cada evento a todos os
 // webhooks cadastrados. Cada checkout leva a etiqueta do produto e cada webhook ignora o que é de outro produto.
 export const PRODUCT = 'anvil';
+
+// ---- RECURSOS COM SELO ("mapa recurso -> plano mínimo") ----
+// Fonte única: FEATURE_MIN_PLAN em planConfig.js (uma linha por recurso). As rotas (planGates / requireGate), o selo de plano do app
+// (/api/billing/status devolve este mapa) e o "Ver como plano" do dono leem de lá. Para pôr selo em algo novo: UMA linha lá
+// + o texto em client/src/plans/planConfig.js.
+const PLANS = Object.fromEntries(Object.keys(PLAN_RANK).map((key) => [key, {
+  key, name: PLAN_LABELS[key], rank: PLAN_RANK[key], sold: true,
+  price: { month: PLAN_PRICES[key], year: Math.round(PLAN_PRICES[key] * 12 * 0.9) },
+  maxUsers: PLAN_USER_LIMITS[key], maxStudents: ((PLAN_EXTRA_LIMITS || {}).students || {})[key],
+}]));
+const GATES = Object.fromEntries(Object.entries(FEATURE_MIN_PLAN).map(([g, min]) => [g, (p) => p.rank >= PLAN_RANK[min]]));
+const gates = makeGates(PLANS, GATES, 'basico');
+export const { minPlanForGate, publicGates, addsByPlan } = gates;
+export const planKeys = () => Object.keys(PLANS);
+
+// Catálogo para o front (JSON-seguro): preços, limites e o que cada plano ACRESCENTA em relação ao anterior.
+export function publicCatalog() {
+  const adds = addsByPlan();
+  const fin = (n) => (Number.isFinite(n) ? n : null);
+  return Object.values(PLANS).sort((a, b) => a.rank - b.rank).map((p) => ({
+    key: p.key, name: p.name, rank: p.rank, price: p.price, adds: adds[p.key] || [],
+    maxUsers: fin(p.maxUsers), maxStudents: fin(p.maxStudents),
+  }));
+}
 
 function priceIdFor(plan, interval = 'month') {
   const table = normalizeInterval(interval) === 'year' ? YEARLY_PRICE_ENV_BY_PLAN : PRICE_ENV_BY_PLAN;
@@ -75,6 +101,10 @@ export function licensedPlan() {
 // Stripe por trás (instância da Impact Digital, demonstração, instalação manual) tudo fica liberado,
 // para uma instalação nunca se trancar sozinha. LICENSED_PLAN sempre ganha.
 export async function effectivePlan() {
+  // Dono da plataforma vendo o produto como outro plano (X-Preview-Plan, só para OWNER_EMAILS: owner.js / previewPlan.js):
+  // vale só neste pedido e nunca muda a assinatura.
+  const preview = store.getStore();
+  if (preview && PLAN_RANK[preview.plan]) return preview.plan;
   const licensed = licensedPlan();
   if (licensed) return licensed;
   if (!isConfigured()) return 'completo';
@@ -87,12 +117,17 @@ export async function effectivePlan() {
 export const planAllows = async (min) => PLAN_RANK[await effectivePlan()] >= PLAN_RANK[min];
 export const allowsFeature = (plan, feature) => PLAN_RANK[plan] >= PLAN_RANK[FEATURE_MIN_PLAN[feature] || 'basico'];
 
-export function requirePlan(minPlan) {
+// Barreira por RECURSO (o plano mínimo vem de FEATURE_MIN_PLAN, uma fonte só).
+export function requireGate(feature) {
+  return requirePlan(FEATURE_MIN_PLAN[feature] || 'basico', feature);
+}
+
+export function requirePlan(minPlan, feature) {
   return async (req, res, next) => {
     try {
       const current = await effectivePlan();
       if (PLAN_RANK[current] < PLAN_RANK[minPlan]) {
-        return res.status(402).json({ error: `This feature requires the ${PLAN_LABELS[minPlan]} plan or higher.`, code: 'plan_required', currentPlan: current, requiredPlan: minPlan });
+        return res.status(402).json({ error: `This feature requires the ${PLAN_LABELS[minPlan]} plan or higher.`, code: 'plan_required', ...(feature ? { feature } : {}), currentPlan: current, requiredPlan: minPlan });
       }
       next();
     } catch (e) { next(e); }
@@ -142,6 +177,8 @@ export async function status() {
     userLimit: Number.isFinite(lim) ? lim : null,
     features,
     featureMinPlan: FEATURE_MIN_PLAN,
+    gates: publicGates(plan),
+    catalog: publicCatalog(),
     plans: Object.keys(PLAN_RANK).map((id) => ({ id, label: PLAN_LABELS[id], monthly: PLAN_PRICES[id], yearly: annualPrice(id), userLimit: Number.isFinite(PLAN_USER_LIMITS[id]) ? PLAN_USER_LIMITS[id] : null, available: !!priceIdFor(id, 'month') || !!getPaymentLinks()[id] })),
     paymentLinks: getPaymentLinks(),
     paymentLinksYearly: getPaymentLinks('year'),
