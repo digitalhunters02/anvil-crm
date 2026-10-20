@@ -101,7 +101,7 @@ app.use(billing.planGates());
 mountAnvilPro(app);
 // "Importar de foto" (AI reads a photo/print, the person reviews before saving) + extra use by credits.
 app.use('/api/photo-import', createPhotoImportRouter({
-  pool, requireAuth, requireAdmin: (req, res, next) => requireOwner(req, res, () => blockInPreview(req, res, next)),
+  pool, requireAuth, requireAdmin: (req, res, next) => requireOwner(req, res, (err) => (err ? next(err) : blockInPreview(req, res, next))),
   effectivePlan: billing.effectivePlan, getSubscription: billing.getSubscription,
   planLimits: { basico: 0, essencial: 100, completo: 500 },
   kindsOpts: { contactTypes: ['business'], disableKinds: ['leads', 'expense'], clientsPage: 'customers' },
