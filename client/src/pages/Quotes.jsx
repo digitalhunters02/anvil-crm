@@ -8,6 +8,7 @@ import {
 import Icon from '../components/Icon.jsx';
 import { money, shortDate } from '../format.js';
 import { downloadCsv } from '../csv.js';
+import { usePlanGate, usePlan as usePlanCtx } from '../plans/PlanBadge.jsx';
 
 const STATUS_OPTIONS = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Expired'];
 const TONE = { Draft: 'neutral', Sent: 'blue', Accepted: 'green', Rejected: 'rose', Expired: 'steel' };
@@ -93,10 +94,14 @@ export default function Quotes() {
 
   useEffect(() => {
     load();
-    api.rfqs().then(setRfqs);
     api.customers().then(setCustomers);
     api.users().then(setUsers);
   }, []);
+
+  // A lista de RFQs só existe a partir do plano Professional: sem ele, não chama a rota (responderia 402).
+  const rfqGate = usePlanGate('rfqs');
+  const { enabled: planKnown } = usePlanCtx();
+  useEffect(() => { if (planKnown && !rfqGate.locked) api.rfqs().then(setRfqs).catch(() => {}); }, [planKnown, rfqGate.locked]);
 
   if (!rows) return <Layout title="Quotes"><Spinner /></Layout>;
 

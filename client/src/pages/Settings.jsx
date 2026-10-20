@@ -10,6 +10,7 @@ import { downloadCsv } from '../csv.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { MyAccountCard, StaffCard } from '../auth/AccountPanel.jsx';
 import PlansCard from '../plans/PlansCard.jsx';
+import PlanBadge, { usePlanGate, usePlan as usePlanCtx } from '../plans/PlanBadge.jsx';
 
 const PROFILE_KEY = 'anvil-company-profile';
 const LOGO_KEY = 'anvil-company-logo';
@@ -94,6 +95,16 @@ function WhatsAppConnectForm({ onCancel, onSubmit, busy }) {
   );
 }
 
+// Botão de exportar CSV: se o registro exige plano acima do atual, ganha o selo e abre a janelinha (a rota nem é chamada).
+function ExportButton({ item }) {
+  const g = usePlanGate(item.gate);
+  return (
+    <Button variant="outline" size="sm" className="min-h-[40px]" onClick={g.locked ? g.open : item.run} data-testid={`export-${item.label}`} data-plan-locked={g.locked ? g.minPlan : undefined}>
+      <Icon name="download" size={13} /> {item.label}{g.locked && <PlanBadge gate={item.gate} />}
+    </Button>
+  );
+}
+
 export default function Settings() {
   const { account } = useAuth();
   const [users, setUsers] = useState(null);
@@ -130,7 +141,10 @@ export default function Settings() {
     api.whatsappStatus().then(setWhatsapp).catch(() => {});
   }
 
-  useEffect(refreshWhatsappStatus, []);
+  // Plano abaixo do Complete: o botão ganha o selo e abre a janelinha; a rota do WhatsApp nem é chamada (responderia 402).
+  const waGate = usePlanGate('whatsapp');
+  const { enabled: planKnown } = usePlanCtx();
+  useEffect(() => { if (planKnown && !waGate.locked) refreshWhatsappStatus(); }, [planKnown, waGate.locked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggleWhatsapp() {
     setWhatsappError('');
@@ -209,10 +223,10 @@ export default function Settings() {
 
   const EXPORTS = [
     { label: 'Customers', run: () => exportEntity('customers', api.customers, ['Name', 'Industry', 'City', 'State', 'Status'], (r) => [r.name, r.industry, r.city, r.state, r.status]) },
-    { label: 'RFQs', run: () => exportEntity('rfqs', api.rfqs, ['Title', 'Customer', 'Status', 'Due Date'], (r) => [r.title, r.customer_name, r.status, r.due_date]) },
+    { label: 'RFQs', gate: 'rfqs', run: () => exportEntity('rfqs', api.rfqs, ['Title', 'Customer', 'Status', 'Due Date'], (r) => [r.title, r.customer_name, r.status, r.due_date]) },
     { label: 'Quotes', run: () => exportEntity('quotes', api.quotes, ['Quote #', 'Customer', 'Total', 'Status'], (r) => [r.quote_number, r.customer_name, r.total_amount, r.status]) },
-    { label: 'Work Orders', run: () => exportEntity('work-orders', api.workOrders, ['Work Order #', 'Customer', 'Status', 'Due Date'], (r) => [r.work_order_number, r.customer_name, r.status, r.due_date]) },
-    { label: 'Purchase Orders', run: () => exportEntity('purchase-orders', api.purchaseOrders, ['PO #', 'Supplier', 'Status', 'Total'], (r) => [r.po_number, r.supplier_name, r.status, r.total_amount]) },
+    { label: 'Work Orders', gate: 'work_orders', run: () => exportEntity('work-orders', api.workOrders, ['Work Order #', 'Customer', 'Status', 'Due Date'], (r) => [r.work_order_number, r.customer_name, r.status, r.due_date]) },
+    { label: 'Purchase Orders', gate: 'purchase_orders', run: () => exportEntity('purchase-orders', api.purchaseOrders, ['PO #', 'Supplier', 'Status', 'Total'], (r) => [r.po_number, r.supplier_name, r.status, r.total_amount]) },
     { label: 'Invoices', run: () => exportEntity('invoices', api.invoices, ['Invoice #', 'Customer', 'Amount', 'Status'], (r) => [r.invoice_number, r.customer_name, r.amount, r.status]) },
   ];
 
@@ -330,10 +344,13 @@ export default function Settings() {
               <Button
                 variant={whatsapp.connected ? 'outline' : 'brand'}
                 size="sm"
-                onClick={toggleWhatsapp}
-                disabled={whatsappBusy}
+                className="min-h-[40px]"
+                onClick={waGate.locked ? waGate.open : toggleWhatsapp}
+                disabled={waGate.locked ? false : whatsappBusy}
+                data-testid="whatsapp-connect"
+                data-plan-locked={waGate.locked ? waGate.minPlan : undefined}
               >
-                {whatsappBusy ? '…' : whatsapp.connected ? 'Disconnect' : 'Connect'}
+                {whatsappBusy ? '…' : whatsapp.connected ? 'Disconnect' : 'Connect'}{waGate.locked && <PlanBadge gate="whatsapp" inherit />}
               </Button>
             </div>
             {whatsappError && (
@@ -374,11 +391,7 @@ export default function Settings() {
         <Card className="p-1 lg:col-span-2">
           <CardHead title="Data Export" sub="Download CSV snapshots of core records" />
           <div className="px-5 pb-5 flex flex-wrap gap-2">
-            {EXPORTS.map((e) => (
-              <Button key={e.label} variant="outline" size="sm" onClick={e.run}>
-                <Icon name="download" size={13} /> {e.label}
-              </Button>
-            ))}
+            {EXPORTS.map((e) => <ExportButton key={e.label} item={e} />)}
           </div>
         </Card>
       </div>

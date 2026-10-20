@@ -71,3 +71,11 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #bdbcb3;
 }
+
+/* "Ver como plano" (só dono da plataforma): a faixa fixa fica acima do app. O app vira o "bloco de referência" dos elementos
+   position:fixed (barra de cima do celular, gaveta do menu), para eles ficarem ABAIXO da faixa em vez de cobri-la. */
+.plan-preview-on > :not(.plan-previewbar) { transform: translateZ(0); }
+/* O Anvil ocupa a tela toda (.app-shell): com a faixa em cima, a faixa + o app dividem a altura da tela em qualquer largura. */
+.plan-preview-on { display: flex; flex-direction: column; height: 100vh; height: 100dvh; max-width: 100%; overflow: hidden; }
+.plan-preview-on > .plan-previewbar { flex: none; }
+.plan-preview-on > :not(.plan-previewbar) { flex: 1 1 0%; min-height: 0 !important; height: auto !important; }

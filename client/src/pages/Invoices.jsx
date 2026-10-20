@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { usePlanGate, usePlan as usePlanCtx } from '../plans/PlanBadge.jsx';
 import api from '../api.js';
 import Layout from '../components/Layout.jsx';
 import {
@@ -89,9 +90,13 @@ export default function Invoices() {
 
   useEffect(() => {
     load();
-    api.workOrders().then(setWorkOrders);
     api.customers().then(setCustomers);
   }, []);
+
+  // A lista de ordens de produção só existe a partir do plano Professional: sem ele, não chama a rota (responderia 402).
+  const woGate = usePlanGate('work_orders');
+  const { enabled: planKnown } = usePlanCtx();
+  useEffect(() => { if (planKnown && !woGate.locked) api.workOrders().then(setWorkOrders).catch(() => {}); }, [planKnown, woGate.locked]);
 
   if (!rows) return <Layout title="Invoices"><Spinner /></Layout>;
 

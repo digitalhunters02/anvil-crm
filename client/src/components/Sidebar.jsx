@@ -6,16 +6,56 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { useT } from '../auth/i18n.js';
 import { LogOutIcon } from '../auth/AuthIcons.jsx';
 import { usePlan } from '../plans/PlanContext.jsx';
-import { LockIcon } from '../plans/PlanGate.jsx';
+import PlanBadge, { usePlanGate } from '../plans/PlanBadge.jsx';
+import PlanPreview from '../plans/PlanPreview.jsx';
+import { NAV_GATES } from '../plans/planConfig.js';
 
 const AVATAR_KEY = 'anvil-operator-avatar';
+
+// Selo de plano no menu: o item continua aí e clicável; se o recurso exige plano acima do atual, ganha o selo e abre a janelinha.
+// A barra lateral é escura, então o selo usa uma versão clara (coral) da cor da marca.
+const BADGE_ON_DARK = { marginLeft: 0, color: '#f2998f', background: 'rgba(242,153,143,0.14)', border: '1px solid rgba(242,153,143,0.5)' };
+
+function NavItem({ item, onNavigate }) {
+  const gate = NAV_GATES[item.to];
+  const g = usePlanGate(gate);
+  return (
+    <NavLink
+      to={item.to}
+      end={item.to === '/'}
+      data-nav={item.to}
+      data-plan-locked={g.locked ? g.minPlan : undefined}
+      aria-haspopup={g.locked ? 'dialog' : undefined}
+      onClick={(e) => {
+        if (g.locked) { e.preventDefault(); if (onNavigate) onNavigate(); g.open(); return; }
+        if (onNavigate) onNavigate();
+      }}
+      className={({ isActive }) =>
+        `relative flex items-center gap-2.5 px-3 py-2 min-h-[40px] rounded-md text-[13.5px] font-medium transition-colors ${
+          isActive && !g.locked ? 'bg-side2 text-white' : 'text-sideText hover:bg-side2/60 hover:text-white'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && !g.locked && (
+            <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-brand" />
+          )}
+          <span className="flex-none inline-flex"><Icon name={item.icon} size={16} stroke={isActive && !g.locked ? '#e08c82' : '#83868a'} /></span>
+          <span className="flex-grow min-w-0 leading-tight">{item.label}</span>
+          {g.locked && <PlanBadge gate={gate} style={BADGE_ON_DARK} />}
+        </>
+      )}
+    </NavLink>
+  );
+}
 
 const NAV = [
   { section: null, items: [{ to: '/', label: 'Dashboard', icon: 'dashboard' }] },
   {
     section: 'Sales',
     items: [
-      { to: '/rfqs', label: 'RFQs', icon: 'rfq', feature: 'rfqs' },
+      { to: '/rfqs', label: 'RFQs', icon: 'rfq' },
       { to: '/quotes', label: 'Quotes', icon: 'quote' },
       { to: '/customers', label: 'Customers', icon: 'customers' },
     ],
@@ -23,35 +63,35 @@ const NAV = [
   {
     section: 'Production',
     items: [
-      { to: '/work-orders', label: 'Work Orders', icon: 'workOrder', feature: 'work_orders' },
-      { to: '/bill-of-materials', label: 'Bill of Materials', icon: 'bom', feature: 'bill_of_materials' },
-      { to: '/calendar', label: 'Production Calendar', icon: 'clock', feature: 'production_calendar' },
-      { to: '/costing', label: 'Job Costing', icon: 'gauge', feature: 'job_costing' },
-      { to: '/quality-inspections', label: 'Quality Inspections', icon: 'quality', feature: 'quality_inspections' },
+      { to: '/work-orders', label: 'Work Orders', icon: 'workOrder' },
+      { to: '/bill-of-materials', label: 'Bill of Materials', icon: 'bom' },
+      { to: '/calendar', label: 'Production Calendar', icon: 'clock' },
+      { to: '/costing', label: 'Job Costing', icon: 'gauge' },
+      { to: '/quality-inspections', label: 'Quality Inspections', icon: 'quality' },
     ],
   },
   {
     section: 'Supply Chain',
     items: [
-      { to: '/inventory', label: 'Inventory', icon: 'material', feature: 'inventory' },
-      { to: '/shortages', label: 'Shortages & Buying', icon: 'spark', feature: 'mrp' },
+      { to: '/inventory', label: 'Inventory', icon: 'material' },
+      { to: '/shortages', label: 'Shortages & Buying', icon: 'spark' },
       { to: '/suppliers', label: 'Suppliers', icon: 'supplier' },
-      { to: '/purchase-orders', label: 'Purchase Orders', icon: 'purchaseOrder', feature: 'purchase_orders' },
+      { to: '/purchase-orders', label: 'Purchase Orders', icon: 'purchaseOrder' },
     ],
   },
   {
     section: 'Fulfillment',
     items: [
-      { to: '/shipments', label: 'Shipments', icon: 'shipment', feature: 'shipments' },
+      { to: '/shipments', label: 'Shipments', icon: 'shipment' },
       { to: '/invoices', label: 'Invoices', icon: 'invoice' },
     ],
   },
   {
     section: 'System',
     items: [
-      { to: '/automations', label: 'Automations', icon: 'automation', feature: 'automations' },
-      { to: '/whatsapp', label: 'WhatsApp', icon: 'whatsapp', feature: 'whatsapp' },
-      { to: '/reports', label: 'Reports', icon: 'reports', feature: 'reports' },
+      { to: '/automations', label: 'Automations', icon: 'automation' },
+      { to: '/whatsapp', label: 'WhatsApp', icon: 'whatsapp' },
+      { to: '/reports', label: 'Reports', icon: 'reports' },
       { to: '/settings', label: 'Settings', icon: 'settings' },
     ],
   },
@@ -59,8 +99,8 @@ const NAV = [
 
 export default function Sidebar({ open = false, onNavigate }) {
   const { account, logout } = useAuth();
-  const { t } = useT();
-  const { allows } = usePlan();
+  const { t, lang } = useT();
+  const { me } = usePlan();
   const fileRef = useRef(null);
   const [avatar, setAvatar] = useState(null);
 
@@ -118,34 +158,19 @@ export default function Sidebar({ open = false, onNavigate }) {
             )}
             <div className="space-y-0.5">
               {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    `relative flex items-center gap-2.5 px-3 py-2 rounded-md text-[13.5px] font-medium transition-colors ${
-                      isActive ? 'bg-side2 text-white' : 'text-sideText hover:bg-side2/60 hover:text-white'
-                    }`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      {isActive && (
-                        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-brand" />
-                      )}
-                      <Icon name={item.icon} size={16} stroke={isActive ? '#e08c82' : '#83868a'} />
-                      {item.label}
-                      {item.feature && !allows(item.feature) && <LockIcon size={12} className="ml-auto text-sideMuted" />}
-                    </>
-                  )}
-                </NavLink>
+                <NavItem key={item.to} item={item} onNavigate={onNavigate} />
               ))}
             </div>
           </div>
         ))}
       </nav>
 
+      {me?.owner && (
+        // "Ver como plano": só o dono da plataforma (OWNER_EMAILS) vê este seletor.
+        <div className="px-3 pt-3 text-sideText flex-shrink-0" data-testid="plan-preview-slot">
+          <PlanPreview theme={{ accent: '#f2998f' }} langKey={lang} me={me} />
+        </div>
+      )}
       <div className="px-4 py-4 border-t border-sideLine flex items-center gap-2.5 flex-shrink-0">
         <button
           type="button"

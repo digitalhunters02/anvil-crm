@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { PlanProvider } from './plans/PlanContext.jsx';
 import './index.css';
+import './plans/planPreview.js'; // "Ver como plano" (só dono da plataforma): manda X-Preview-Plan nos pedidos à API
 
 // Makes an installed copy (Add to Home Screen) pick up a new deploy on its
 // own — as soon as a new service worker takes over, reload once so the page

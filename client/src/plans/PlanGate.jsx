@@ -1,29 +1,36 @@
-import { Link } from 'react-router-dom';
-import { Card, Badge } from '../components/ui.jsx';
-import { usePlan } from './PlanContext.jsx';
+import Layout from '../components/Layout.jsx';
+import { Spinner } from '../components/ui.jsx';
+import { useT } from '../auth/i18n.js';
+import PlanBadge, { usePlan as useBadgePlan, usePlanGate } from './PlanBadge.jsx';
+import { planStr, planFill, gateText } from './planStrings.js';
 
-export function LockIcon({ size = 13, className = '' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-}
-
-// Envolve uma página: se o plano não libera o recurso, mostra o convite em vez da página.
+// Envolve uma TELA inteira: se o plano não libera o recurso (aberta pelo menu, pelo endereço ou por um atalho), mostra o cartão
+// amigável "Disponível no plano X" com o botão que abre a janelinha, em vez da tela. Enquanto o servidor ainda não disse o plano,
+// mostra só o carregando (a tela de dentro não chama a API antes da hora).
 export default function PlanGate({ feature, title, children }) {
-  const { billing, allows } = usePlan();
-  if (allows(feature)) return children;
-  const need = billing?.featureMinPlan?.[feature];
-  const label = billing?.plans?.find((p) => p.id === need)?.label || 'a higher';
+  const { enabled } = useBadgePlan();
+  const g = usePlanGate(feature);
+  const { lang } = useT();
+  if (!enabled) return <Layout title={title}><Spinner /></Layout>;
+  if (!g.locked) return children;
+  const x = planStr(lang);
+  const text = gateText(feature, lang);
   return (
-    <div className="max-w-xl mx-auto px-4 py-16">
-      <Card className="p-8 text-center">
-        <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-brandTint text-brand flex items-center justify-center"><LockIcon size={20} /></div>
-        <h2 className="font-display text-lg font-semibold text-ink">{title || 'This feature'} is not in your plan</h2>
-        <p className="text-sm text-muted mt-1.5">It is available on the <Badge tone="brand">{label}</Badge> plan{label === 'a higher' ? '' : ' and above'}.</p>
-        <Link to="/settings" className="inline-block mt-5 px-4 py-2 rounded-lg bg-brand text-white text-sm font-semibold hover:bg-brand/90">See plans</Link>
-      </Card>
-    </div>
+    <Layout title={title}>
+      <div className="max-w-xl mx-auto bg-surface border border-line rounded-xl p-6 text-center" data-testid="plan-locked-page" data-plan-locked={g.minPlan}>
+        <div className="text-base font-semibold text-ink mb-1">
+          {text ? text.name : title}<PlanBadge plan={g.minPlan} />
+        </div>
+        <p className="text-sm text-muted m-0 mb-4">
+          {text ? planFill(x.notInPlanBody, { what: text.what, plan: g.minName }) : planFill(x.modalTitle, { plan: g.minName })}
+        </p>
+        <button
+          type="button" onClick={g.open} data-testid="plan-locked-details"
+          className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-lg bg-brand text-white text-sm font-semibold hover:bg-brand/90"
+        >
+          {x.details}
+        </button>
+      </div>
+    </Layout>
   );
 }
