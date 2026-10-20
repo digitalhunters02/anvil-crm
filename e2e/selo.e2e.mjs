@@ -43,6 +43,7 @@ const admin = new pg.Client({ connectionString: ADMIN_URL });
 await admin.connect();
 await admin.query(`CREATE DATABASE ${DBNAME}`);
 const db = new pg.Pool({ connectionString: DBURL, ssl: false });
+db.on('error', () => {}); // o banco é apagado no fim (DROP ... FORCE): conexões ociosas caem e isso não é erro
 const seed = spawnSync(process.execPath, [path.join(SERVER, 'src', 'seed.js')], { env: { ...process.env, DATABASE_URL: DBURL, PGSSL: 'false' }, encoding: 'utf8' });
 assert.equal(seed.status, 0, seed.stderr);
 
