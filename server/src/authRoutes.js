@@ -125,6 +125,10 @@ const demoByIp = makeLimiter({ windowMs: WINDOW_MS, max: Number(process.env.DEMO
 // Public, rate limited. The hourly scheduler in demoTrial.js deletes the account when the 3 days end.
 export function demoTrialRoute(app, ar) {
   app.post('/api/demo-request', ar(async (req, res) => {
+    // Kill switch for installations that hold real customer data: DEMO_TRIAL_DISABLED=true closes the public trial.
+    if (/^(true|1|yes)$/i.test(String(process.env.DEMO_TRIAL_DISABLED || '').trim())) {
+      return res.status(404).json({ error: 'The free trial is not available on this server.', code: 'demo_disabled' });
+    }
     const ip = clientIp(req);
     const wait = demoByIp.blockedFor(ip);
     if (wait) return tooMany(res, wait);
@@ -144,11 +148,23 @@ export function demoTrialRoute(app, ar) {
     }
     if (existing) await run(`DELETE FROM accounts WHERE id = $1`, [existing.id]); // expired trial not yet swept
     const throwaway = crypto.randomBytes(24).toString('hex');
+    // ON CONFLICT: two simultaneous requests with the same new email create one account; the loser gets the winner's.
     const account = (await run(
       `INSERT INTO accounts (name, email, password_hash, role, is_demo_trial, demo_expires_at)
-       VALUES ($1, $2, $3, 'staff', TRUE, now() + interval '${DEMO_TRIAL_DAYS} days') RETURNING *`,
+       VALUES ($1, $2, $3, 'staff', TRUE, now() + interval '${DEMO_TRIAL_DAYS} days')
+       ON CONFLICT DO NOTHING RETURNING *`,
       [name, email, hashPassword(throwaway)]
     )).rows[0];
+    if (!account) {
+      const winner = await accountByEmail(email);
+      if (winner && winner.is_demo_trial && new Date(winner.demo_expires_at) > new Date()) {
+        return res.json({ token: signToken(winner, true), account: publicAccount(winner) });
+      }
+      if (winner && !winner.is_demo_trial) {
+        return res.status(409).json({ error: 'An account with that email already exists. Please sign in instead.', code: 'email_in_use' });
+      }
+      return res.status(503).json({ error: 'Please try again in a moment.', code: 'try_again' });
+    }
     reportLead({ name, email, notes: `${DEMO_TRIAL_DAYS}-day demo trial (demo-request)`, attribution: req.body?.attribution });
     res.status(201).json({ token: signToken(account, true), account: publicAccount(account) });
   }));
