@@ -352,3 +352,32 @@ test('trial logins do not count against the plan user limit (Essential plan: 3 l
   assert.equal((await s.call('GET', '/api/billing/status', { token: tok })).json.users, 3);
   await s.stop();
 });
+
+test('two simultaneous requests with the same new email: one account, both get a token, no 500, Harbor told once', async () => {
+  harborHits.length = 0;
+  const email = 'race@example.com';
+  const rs = await Promise.all(Array.from({ length: 6 }, () => main.call('POST', '/api/demo-request', { body: { name: 'Race', email } })));
+  for (const r of rs) assert.ok([200, 201].includes(r.status), `status ${r.status}: ${r.text}`);
+  assert.equal(rs.filter((r) => r.status === 201).length, 1, 'exactly one request created the account');
+  assert.equal((await q(`SELECT COUNT(*)::int AS n FROM accounts WHERE lower(email) = $1`, [email]))[0].n, 1);
+  const ids = new Set(rs.map((r) => r.json.account.id));
+  assert.equal(ids.size, 1, 'everyone got the first account');
+  for (const r of rs) assert.equal((await main.call('GET', '/api/auth/me', { token: r.json.token })).status, 200);
+  await wait(400);
+  assert.equal(harborHits.length, 1);
+});
+
+test('DEMO_TRIAL_DISABLED=true: /api/demo-request answers 404 demo_disabled and creates nothing', async () => {
+  const before = (await q(`SELECT COUNT(*)::int AS n FROM accounts`))[0].n;
+  const s = await startServer(7824, { DEMO_TRIAL_DISABLED: 'true' });
+  const r = await s.call('POST', '/api/demo-request', { body: { name: 'Off', email: 'off@example.com' } });
+  assert.equal(r.status, 404);
+  assert.equal(r.json.code, 'demo_disabled');
+  assert.equal((await q(`SELECT COUNT(*)::int AS n FROM accounts`))[0].n, before);
+  assert.equal((await s.call('GET', '/api/health')).status, 200);
+  await s.stop();
+  // Off by default and with any other value
+  const s2 = await startServer(7824, { DEMO_TRIAL_DISABLED: 'false' });
+  assert.equal((await s2.call('POST', '/api/demo-request', { body: { name: 'On', email: 'on@example.com' } })).status, 201);
+  await s2.stop();
+});
