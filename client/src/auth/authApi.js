@@ -1,5 +1,5 @@
 import { BASE } from '../api.js';
-import { authHeaders } from './session.js';
+import { authHeaders, markTrialEnded } from './session.js';
 
 export class AuthError extends Error {
   constructor(message, { status = 0, code = null, retryAfter = null } = {}) {
@@ -23,6 +23,7 @@ async function request(method, path, body) {
   }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
+    if (res.status === 401 && data?.code === 'trial_expired') markTrialEnded();
     throw new AuthError((data && data.error) || `Request failed (${res.status})`, {
       status: res.status, code: data?.code || null, retryAfter: data?.retryAfter || null,
     });
@@ -32,6 +33,7 @@ async function request(method, path, body) {
 
 export const authApi = {
   login: (email, password, remember) => request('POST', '/auth/login', { email, password, remember }),
+  demoRequest: (name, email, attribution) => request('POST', '/demo-request', { name, email, attribution }),
   forgot: (email) => request('POST', '/auth/forgot', { email }),
   reset: (token, password) => request('POST', '/auth/reset', { token, password }),
   me: () => request('GET', '/auth/me'),

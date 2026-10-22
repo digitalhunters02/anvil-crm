@@ -89,8 +89,14 @@ export function MyAccountCard() {
         </button>
       }
     >
-      <h4 className="text-xs font-semibold text-muted mb-3 uppercase tracking-wide">{t('changePassword')}</h4>
-      <ChangePasswordForm />
+      {account?.isDemoTrial ? (
+        <p className="text-[13px] text-muted" data-testid="trial-account-note">{t('trial.accountNote')}</p>
+      ) : (
+        <>
+          <h4 className="text-xs font-semibold text-muted mb-3 uppercase tracking-wide">{t('changePassword')}</h4>
+          <ChangePasswordForm />
+        </>
+      )}
     </Panel>
   );
 }

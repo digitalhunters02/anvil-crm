@@ -65,7 +65,11 @@ export default function PhotoImportModal({ Modal, t: tRaw, lang, api, kind, fiel
   }, [onClose]);
 
   useEffect(() => {
-    api.status().then((s) => { setStatus(s); setCap(s.credit?.capCents || s.credit?.capOptionsCents?.[1] || s.credit?.capOptionsCents?.[0] || null); }).catch(() => setStatus({ configured: true, limit: 1, used: 0 }));
+    api.status().then((s) => { setStatus(s); setCap(s.credit?.capCents || s.credit?.capOptionsCents?.[1] || s.credit?.capOptionsCents?.[0] || null); }).catch((e) => {
+      // Free trial: the server keeps photo reading closed; say so right away instead of showing a usage count.
+      if ((e.code || e.body?.code) === "demo_blocked") { setStatus({ configured: true, limit: 0, used: 0, demoBlocked: true }); return; }
+      setStatus({ configured: true, limit: 1, used: 0 });
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const errText = (e) => { const k = `photo.err.${e.code}`; const v = t(k); return v && v !== k ? v : t("photo.err.other"); };
@@ -141,7 +145,9 @@ export default function PhotoImportModal({ Modal, t: tRaw, lang, api, kind, fiel
           <>
             <p className={`${cls.muted} text-sm mb-4`}>{t(`photo.intro.${kind}`)}</p>
             {warnBanner("photo-warn")}
-            {blocked === "ai_not_configured" || (blocked && cr && !cr.eligible) ? (
+            {status?.demoBlocked ? (
+              <p role="alert" className={`${cls.danger} text-sm mb-3`} data-testid="photo-error">{t("photo.err.demo_blocked")}</p>
+            ) : blocked === "ai_not_configured" || (blocked && cr && !cr.eligible) ? (
               <p role="alert" className={`${cls.danger} text-sm mb-3`} data-testid="photo-blocked">{blocked === "ai_not_configured" ? t("photo.err.ai_not_configured") : t("photo.credit.upgrade")}</p>
             ) : blocked ? null : (
               <>

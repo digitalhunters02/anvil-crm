@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar.jsx';
 import Topbar from './Topbar.jsx';
 import Icon from './Icon.jsx';
+import TrialBanner from '../auth/TrialBanner.jsx';
 
 export default function Layout({ title, count, actions, children }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -52,6 +53,7 @@ export default function Layout({ title, count, actions, children }) {
       <Sidebar open={drawerOpen} onNavigate={() => setDrawerOpen(false)} />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full pt-14 md:pt-0">
+        <TrialBanner />
         <Topbar title={title} count={count} actions={actions} />
         <main className="app-content flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-4 sm:px-7 py-5 sm:py-6">{children}</main>
       </div>

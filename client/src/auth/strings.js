@@ -1,3 +1,5 @@
+import { mergeTrialStrings } from '../i18n/trialStrings.js';
+
 // Sign-in / account strings in English, Portuguese and Spanish.
 // Placeholders like {name} are filled by t(key, { name }).
 export const AUTH_STRINGS = {
@@ -203,3 +205,5 @@ export const AUTH_STRINGS = {
     privacyTitle: 'Política de Privacidad',
   },
 };
+
+mergeTrialStrings(AUTH_STRINGS);

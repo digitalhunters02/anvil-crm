@@ -1,4 +1,5 @@
 import { authHeaders, handleUnauthorized } from './auth/session.js';
+import { translate, currentLang } from './auth/i18n.js';
 
 // In local dev, "/api" is proxied to the local server (see vite.config.js).
 // In production there's no such proxy, so VITE_API_URL must point at the
@@ -6,12 +7,14 @@ import { authHeaders, handleUnauthorized } from './auth/session.js';
 export const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api';
 
 async function handle(r) {
-  // A rejected session (expired, password changed elsewhere) signs the user out.
-  if (r.status === 401) handleUnauthorized();
   if (r.status === 204) return null;
   const data = await r.json().catch(() => null);
+  // A rejected session (expired, password changed elsewhere, free trial over) signs the user out.
+  if (r.status === 401) handleUnauthorized(data && data.code);
   if (!r.ok) {
-    const err = new Error((data && data.error) || `Request failed (${r.status})`);
+    // Free-trial block: the message follows the language chosen on the sign-in screen.
+    const msg = data && data.code === 'demo_blocked' ? translate(currentLang(), 'err.demo_blocked') : data && data.error;
+    const err = new Error(msg || `Request failed (${r.status})`);
     err.status = r.status;
     err.body = data;
     throw err;

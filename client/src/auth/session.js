@@ -53,9 +53,29 @@ export function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// "The free trial ended" note on the sign-in screen: set when the server (or the countdown) ends a trial session.
+const TRIAL_ENDED_KEY = 'anvil-trial-ended';
+export function markTrialEnded() {
+  try { sessionStorage.setItem(TRIAL_ENDED_KEY, '1'); } catch { /* storage blocked */ }
+}
+// Read without clearing: the page can reload by itself (a new service worker taking over) and the note must survive that.
+export function peekTrialEnded() {
+  try { return sessionStorage.getItem(TRIAL_ENDED_KEY) === '1'; } catch { return false; }
+}
+export function consumeTrialEnded() {
+  try {
+    const v = sessionStorage.getItem(TRIAL_ENDED_KEY) === '1';
+    sessionStorage.removeItem(TRIAL_ENDED_KEY);
+    return v;
+  } catch {
+    return false;
+  }
+}
+
 // Called by api.js when any request comes back 401 while holding a token.
-export function handleUnauthorized() {
+export function handleUnauthorized(code) {
   if (!getToken()) return;
+  if (code === 'trial_expired') markTrialEnded();
   clearSession();
   window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
 }
