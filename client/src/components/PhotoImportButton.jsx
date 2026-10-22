@@ -5,6 +5,7 @@ import Icon from './Icon.jsx';
 import PhotoImportModal from './PhotoImportModal.jsx';
 import { api } from '../api.js';
 import { photoT } from '../i18n/photoImportStrings.js';
+import { translate, currentLang } from '../auth/i18n.js';
 
 const CLS = {
   btnPrimary: 'inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-semibold bg-brand text-white border border-brand hover:bg-brand/90 disabled:opacity-50',
@@ -18,7 +19,9 @@ const CLS = {
 export default function PhotoImportButton({ kind, title, fields, validate, toPayload, onSave, onImported }) {
   const [open, setOpen] = useState(false);
   const t = useMemo(() => {
-    const base = photoT('en');
+    const en = photoT('en');
+    // Free-trial block: the message follows the language chosen on the sign-in screen.
+    const base = (k, v) => (k === 'photo.err.demo_blocked' ? translate(currentLang(), 'err.demo_blocked') : en(k, v));
     return title ? (k, v) => (k === `photo.title.${kind}` ? title : base(k, v)) : base;
   }, [title, kind]);
   return (

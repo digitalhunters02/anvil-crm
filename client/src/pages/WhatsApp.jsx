@@ -29,17 +29,22 @@ export default function WhatsApp() {
   const bottomRef = useRef(null);
 
   function loadConversations() {
-    api.whatsappConversations().then((rows) => {
+    return api.whatsappConversations().then((rows) => {
       setConversations(rows);
       setSelected((prev) => prev || (rows[0] && rows[0].contact_phone) || null);
+    }).catch((e) => {
+      // Free trial: the inbox holds real customers' messages, so the server keeps it closed; show it empty.
+      if (e.status === 403) { setConversations([]); return 'blocked'; }
+      return null;
     });
   }
 
   useEffect(() => {
     api.whatsappStatus().then(setStatus);
-    loadConversations();
-    const id = setInterval(loadConversations, 8000);
-    return () => clearInterval(id);
+    let id;
+    let gone = false;
+    loadConversations().then((r) => { if (!gone && r !== 'blocked') id = setInterval(loadConversations, 8000); });
+    return () => { gone = true; clearInterval(id); };
   }, []);
 
   useEffect(() => {

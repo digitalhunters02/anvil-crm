@@ -33,6 +33,10 @@ function subscribe(cb) {
   return () => listeners.delete(cb);
 }
 
+export function currentLang() {
+  return current;
+}
+
 export function translate(lang, key, vars) {
   let s = AUTH_STRINGS[lang]?.[key] ?? AUTH_STRINGS.en[key] ?? key;
   if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, v);
