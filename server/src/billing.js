@@ -163,7 +163,7 @@ export async function extraLimit(kind) {
 export async function status() {
   const sub = await getSubscription();
   const plan = await effectivePlan();
-  const { n } = await get(`SELECT COUNT(*)::int AS n FROM accounts`);
+  const { n } = await get(`SELECT COUNT(*)::int AS n FROM accounts WHERE is_demo_trial = FALSE`);
   const features = {};
   for (const f of Object.keys(FEATURE_MIN_PLAN)) features[f] = allowsFeature(plan, f);
   const lim = PLAN_USER_LIMITS[plan];

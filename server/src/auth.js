@@ -49,6 +49,8 @@ export function publicAccount(a) {
     email: a.email,
     role: a.role,
     mustChangePassword: !!a.must_change_password,
+    isDemoTrial: !!a.is_demo_trial,
+    demoExpiresAt: a.demo_expires_at || null,
     createdAt: a.created_at,
   };
 }
@@ -79,6 +81,10 @@ export async function requireAuth(req, res, next) {
     if (!account || (account.token_version || 0) !== (payload.tv || 0)) {
       return res.status(401).json({ error: 'Invalid or expired session' });
     }
+    // Teste grátis vencido (a limpeza de hora em hora ainda não passou): não entra mais.
+    if (account.is_demo_trial && new Date(account.demo_expires_at) <= new Date()) {
+      return res.status(401).json({ error: 'Your free trial has ended. Contact Impact Digital to subscribe.', code: 'trial_expired' });
+    }
     req.account = account;
     // Dono da plataforma vendo o produto como outro plano: só para OWNER_EMAILS, nunca muda a conta (previewPlan.js).
     return applyPreview(req, account, next);
@@ -89,6 +95,13 @@ export async function requireAuth(req, res, next) {
 
 export function requireOwner(req, res, next) {
   if (req.account?.role !== 'owner') return res.status(403).json({ error: 'Only the account owner can do this' });
+  next();
+}
+
+// Um login do teste grátis só mexe nos dados de exemplo: nada que saia do sistema (WhatsApp, e-mail), gaste dinheiro ou IA,
+// mude cobrança/planos, contas, senhas ou chaves.
+export function blockDemo(req, res, next) {
+  if (req.account?.is_demo_trial) return res.status(403).json({ error: 'Não disponível no teste grátis', code: 'demo_blocked' });
   next();
 }
 
