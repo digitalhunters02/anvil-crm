@@ -15,14 +15,14 @@ export function mountBillingWebhook(app, ar) {
 }
 
 // Depois do login: status do plano para qualquer conta; escolher plano e gerenciar assinatura só o dono.
-export function mountBilling(app, ar, requireOwner) {
+export function mountBilling(app, ar, requireOwner, blockDemo = (_req, _res, next) => next()) {
   app.get('/api/billing/status', ar(async (_req, res) => res.json(await billing.status())));
-  app.post('/api/billing/checkout', requireOwner, ar(async (req, res) => {
+  app.post('/api/billing/checkout', requireOwner, blockDemo, ar(async (req, res) => {
     try {
       res.json({ url: await billing.createCheckoutSession(String(req.body?.plan || ''), { frontendBaseUrl: frontendBaseUrl(), interval: req.body?.interval }) });
     } catch (e) { res.status(400).json({ error: e.message }); }
   }));
-  app.post('/api/billing/portal', requireOwner, ar(async (_req, res) => {
+  app.post('/api/billing/portal', requireOwner, blockDemo, ar(async (_req, res) => {
     try { res.json({ url: await billing.createPortalSession({ frontendBaseUrl: frontendBaseUrl() }) }); }
     catch (e) { res.status(400).json({ error: e.message }); }
   }));

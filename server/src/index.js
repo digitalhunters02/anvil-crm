@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url';
 import pool, { get, all, run, initSchema } from './db.js';
 import crypto from 'node:crypto';
 import * as whatsapp from './whatsapp.js';
-import { requireAuth, requireOwner, bootstrapOwner } from './auth.js';
-import { publicAuthRoutes, accountRoutes } from './authRoutes.js';
+import { requireAuth, requireOwner, blockDemo, bootstrapOwner } from './auth.js';
+import { publicAuthRoutes, accountRoutes, demoTrialRoute } from './authRoutes.js';
+import { startDemoTrialScheduler } from './demoTrial.js';
 import { mountAdminSummary } from './adminSummary.js';
 import * as billing from './billing.js';
 import { mountBillingWebhook, mountBilling } from './billingRoutes.js';
@@ -52,6 +53,7 @@ const ar = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 // public. Keep this list short and intentional:
 //   GET  /api/health                              uptime / Coolify check
 //   POST /api/auth/login | forgot | reset         sign-in flow (rate limited)
+//   POST /api/demo-request                        free 3-day trial login (rate limited)
 //   GET/POST /api/integrations/whatsapp/webhook   Meta calls these directly
 app.get('/api/health', ar(async (_req, res) => {
   await get('SELECT 1');
@@ -59,6 +61,7 @@ app.get('/api/health', ar(async (_req, res) => {
 }));
 
 publicAuthRoutes(app, ar);
+demoTrialRoute(app, ar);
 
 // Machine-to-machine: Harbor reads this with X-Admin-Key (see adminSummary.js).
 mountAdminSummary(app, ar, get, billing.getAdminSummary);
@@ -95,9 +98,11 @@ app.use('/api', requireAuth);
 accountRoutes(app, ar);
 
 // Plano e cobrança: status para todos, escolher plano só o dono; depois, as barreiras por plano de cada rota.
-mountBilling(app, ar, requireOwner);
+mountBilling(app, ar, requireOwner, blockDemo);
 app.use(billing.planGates());
 mountAnvilPro(app);
+// Teste grátis: a IA gasta dinheiro, então o "Importar de foto" inteiro fica fora do teste.
+app.use('/api/photo-import', blockDemo);
 // "Importar de foto" (AI reads a photo/print, the person reviews before saving) + extra use by credits.
 app.use('/api/photo-import', createPhotoImportRouter({
   pool, requireAuth, requireAdmin: requireOwner,
@@ -802,7 +807,7 @@ app.get('/api/integrations/whatsapp/status', ar(async (req, res) => {
   res.json({ connected: !!conn, displayPhone: conn?.display_phone || null });
 }));
 
-app.post('/api/integrations/whatsapp/connect', requireOwner, ar(async (req, res) => {
+app.post('/api/integrations/whatsapp/connect', requireOwner, blockDemo, ar(async (req, res) => {
   const { phoneNumberId, accessToken, businessAccountId, verifyToken } = req.body || {};
   if (!phoneNumberId || !accessToken) {
     return res.status(400).json({ error: 'Phone Number ID and Access Token are required.' });
@@ -815,20 +820,20 @@ app.post('/api/integrations/whatsapp/connect', requireOwner, ar(async (req, res)
   }
 }));
 
-app.post('/api/integrations/whatsapp/disconnect', requireOwner, ar(async (req, res) => {
+app.post('/api/integrations/whatsapp/disconnect', requireOwner, blockDemo, ar(async (req, res) => {
   await whatsapp.disconnect();
   res.status(204).end();
 }));
 
-app.get('/api/integrations/whatsapp/conversations', ar(async (req, res) => {
+app.get('/api/integrations/whatsapp/conversations', blockDemo, ar(async (req, res) => {
   res.json(await whatsapp.listConversations());
 }));
 
-app.get('/api/integrations/whatsapp/conversations/:phone', ar(async (req, res) => {
+app.get('/api/integrations/whatsapp/conversations/:phone', blockDemo, ar(async (req, res) => {
   res.json(await whatsapp.getConversation(req.params.phone));
 }));
 
-app.post('/api/integrations/whatsapp/send', ar(async (req, res) => {
+app.post('/api/integrations/whatsapp/send', blockDemo, ar(async (req, res) => {
   const { to, text } = req.body || {};
   if (!to || !text) return res.status(400).json({ error: 'to and text are required' });
   try {
@@ -954,6 +959,7 @@ initSchema()
       console.log(`Anvil API listening on http://localhost:${PORT}`);
     });
     startPhotoBilling({ pool, getSubscription: billing.getSubscription });
+    startDemoTrialScheduler();
   })
   .catch((err) => {
     console.error('Failed to initialize database schema:', err);

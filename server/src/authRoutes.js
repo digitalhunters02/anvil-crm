@@ -5,8 +5,9 @@ import crypto from 'node:crypto';
 import { get, all, run } from './db.js';
 import {
   MIN_PASSWORD_LENGTH, EMAIL_RE, normalizeEmail, hashPassword, verifyPassword, signToken, publicAccount,
-  accountByEmail, requireOwner, makeLimiter,
+  accountByEmail, requireOwner, blockDemo, makeLimiter,
 } from './auth.js';
+import { reportLead } from './harborLead.js';
 import { sendPasswordResetEmail, isMailConfigured } from './mailer.js';
 
 const WINDOW_MS = Number(process.env.AUTH_RATE_WINDOW_MS || 15 * 60 * 1000);
@@ -75,7 +76,8 @@ export function publicAuthRoutes(app, ar) {
     forgotByIp.hit(ip);
 
     const account = await accountByEmail(email);
-    if (account) {
+    // Login de teste grátis não tem senha para recuperar (e não vira conta real por e-mail de recuperação).
+    if (account && !account.is_demo_trial) {
       const token = crypto.randomBytes(32).toString('hex');
       // Only the hash is stored, so a database leak does not leak live links.
       await run(
@@ -116,12 +118,48 @@ export function publicAuthRoutes(app, ar) {
   app.post('/api/auth/reset-password', reset);
 }
 
+const DEMO_TRIAL_DAYS = 3;
+const demoByIp = makeLimiter({ windowMs: WINDOW_MS, max: Number(process.env.DEMO_REQUEST_MAX) || 5 });
+
+// Self-serve "try it free for 3 days": a temporary login on the shared sample data (no card).
+// Public, rate limited. The hourly scheduler in demoTrial.js deletes the account when the 3 days end.
+export function demoTrialRoute(app, ar) {
+  app.post('/api/demo-request', ar(async (req, res) => {
+    const ip = clientIp(req);
+    const wait = demoByIp.blockedFor(ip);
+    if (wait) return tooMany(res, wait);
+    demoByIp.hit(ip);
+    const name = String(req.body?.name || '').trim().slice(0, 120);
+    const email = normalizeEmail(req.body?.email);
+    if (!name || !email) return res.status(400).json({ error: 'Name and email are required' });
+    if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Enter a valid email address', code: 'invalid_email' });
+
+    const existing = await accountByEmail(email);
+    if (existing && existing.is_demo_trial && new Date(existing.demo_expires_at) > new Date()) {
+      // Same visitor coming back mid-trial: same account, the countdown is not reset.
+      return res.json({ token: signToken(existing, true), account: publicAccount(existing) });
+    }
+    if (existing && !existing.is_demo_trial) {
+      return res.status(409).json({ error: 'An account with that email already exists. Please sign in instead.', code: 'email_in_use' });
+    }
+    if (existing) await run(`DELETE FROM accounts WHERE id = $1`, [existing.id]); // expired trial not yet swept
+    const throwaway = crypto.randomBytes(24).toString('hex');
+    const account = (await run(
+      `INSERT INTO accounts (name, email, password_hash, role, is_demo_trial, demo_expires_at)
+       VALUES ($1, $2, $3, 'staff', TRUE, now() + interval '${DEMO_TRIAL_DAYS} days') RETURNING *`,
+      [name, email, hashPassword(throwaway)]
+    )).rows[0];
+    reportLead({ name, email, notes: `${DEMO_TRIAL_DAYS}-day demo trial (demo-request)`, attribution: req.body?.attribution });
+    res.status(201).json({ token: signToken(account, true), account: publicAccount(account) });
+  }));
+}
+
 export function accountRoutes(app, ar) {
   app.get('/api/auth/me', ar(async (req, res) => {
     res.json({ account: publicAccount(req.account) });
   }));
 
-  app.post('/api/auth/change-password', ar(async (req, res) => {
+  app.post('/api/auth/change-password', blockDemo, ar(async (req, res) => {
     const { currentPassword, newPassword } = req.body || {};
     if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
       return res.status(400).json({ error: 'Current and new password are required' });
@@ -146,12 +184,12 @@ export function accountRoutes(app, ar) {
   }));
 
   // ---------- staff accounts (owner only) ----------
-  app.get('/api/accounts', requireOwner, ar(async (req, res) => {
-    const rows = await all(`SELECT * FROM accounts ORDER BY role DESC, lower(name)`);
+  app.get('/api/accounts', requireOwner, blockDemo, ar(async (req, res) => {
+    const rows = await all(`SELECT * FROM accounts WHERE is_demo_trial = FALSE ORDER BY role DESC, lower(name)`);
     res.json(rows.map(publicAccount));
   }));
 
-  app.post('/api/accounts', requireOwner, ar(async (req, res) => {
+  app.post('/api/accounts', requireOwner, blockDemo, ar(async (req, res) => {
     const name = String(req.body?.name || '').trim();
     const email = normalizeEmail(req.body?.email);
     const password = req.body?.password;
@@ -164,7 +202,7 @@ export function accountRoutes(app, ar) {
     }
     // Limite de logins do plano (o dono conta como 1).
     const limit = await billing.userLimit();
-    const { n: have } = await get(`SELECT COUNT(*)::int AS n FROM accounts`);
+    const { n: have } = await get(`SELECT COUNT(*)::int AS n FROM accounts WHERE is_demo_trial = FALSE`);
     if (have >= limit) {
       return res.status(402).json({ error: `Your plan allows up to ${limit} staff logins. Upgrade your plan to add more.`, code: 'user_limit', userLimit: limit });
     }
@@ -177,7 +215,7 @@ export function accountRoutes(app, ar) {
     res.status(201).json(publicAccount(r.rows[0]));
   }));
 
-  app.post('/api/accounts/:id/reset-password', requireOwner, ar(async (req, res) => {
+  app.post('/api/accounts/:id/reset-password', requireOwner, blockDemo, ar(async (req, res) => {
     const password = req.body?.password;
     if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
       return res.status(400).json({ error: `Temporary password must be at least ${MIN_PASSWORD_LENGTH} characters` });
@@ -194,7 +232,7 @@ export function accountRoutes(app, ar) {
     res.json({ ok: true });
   }));
 
-  app.delete('/api/accounts/:id', requireOwner, ar(async (req, res) => {
+  app.delete('/api/accounts/:id', requireOwner, blockDemo, ar(async (req, res) => {
     const target = await get(`SELECT * FROM accounts WHERE id = $1`, [Number(req.params.id) || 0]);
     if (!target) return res.status(404).json({ error: 'Account not found' });
     if (target.id === req.account.id) return res.status(400).json({ error: 'You cannot delete your own account' });
