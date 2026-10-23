@@ -46,7 +46,7 @@ if (seed.status !== 0) { console.error(seed.stderr); process.exit(1); }
 const srv = spawn('node', [path.join(SERVER, 'index.js')], {
   env: { ...process.env, NODE_ENV: 'test', PORT: String(PORT), DATABASE_URL: DB_URL, JWT_SECRET: 'e2e-secret-e2e-secret-1234',
     BOOTSTRAP_OWNER_EMAIL: OWNER_EMAIL, BOOTSTRAP_OWNER_PASSWORD: OWNER_PASS, SMTP_HOST: '',
-    HARBOR_API_URL: `http://127.0.0.1:${HARBOR_PORT}`, ADMIN_SUMMARY_KEY: ADMIN_KEY, DEMO_REQUEST_MAX: '100' },
+    HARBOR_API_URL: `http://127.0.0.1:${HARBOR_PORT}`, ADMIN_SUMMARY_KEY: ADMIN_KEY, DEMO_REQUEST_MAX: '100', LICENSED_PLAN: 'basico' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverLog = '';
@@ -107,6 +107,13 @@ async function run(label, ctxOpts, lang) {
   await page.waitForSelector('[data-testid=trial-banner]');
   const bannerText = await page.locator('[data-testid=trial-banner]').innerText();
   check(`${tag} app: countdown bar says when the trial ends`, tr.banner.test(bannerText), bannerText.replace(/\n/g, ' | '));
+  // Plan seal on the menu (selo line): a trial login on the Essential plan sees the same seals as real staff.
+  await page.waitForSelector('[data-nav="/"]', { state: 'attached' });
+  await page.waitForFunction(() => document.querySelectorAll('aside nav [data-plan-badge]').length > 0, null, { timeout: 15000 }).catch(() => {});
+  const navLocked = await page.$$eval('[data-nav][data-plan-locked]', (els) => Object.fromEntries(els.map((e) => [e.dataset.nav, e.dataset.planLocked])));
+  const navBadgeCount = await page.$$eval('aside nav [data-plan-badge]', (els) => els.length);
+  check(`${tag} menu: plan seals shown for a trial login (Essential plan: 13 items locked)`, Object.keys(navLocked).length === 13 && navBadgeCount === 13, JSON.stringify({ locked: Object.keys(navLocked).length, badges: navBadgeCount }));
+  check(`${tag} menu: no owner-only plan preview selector for a trial login`, (await page.locator('[data-testid="plan-preview-slot"]').count()) === 0);
   check(`${tag} app: sample data visible`, /Vanguard|Dashboard/.test(await page.locator('body').innerText()));
   m = await noHScroll(page);
   check(`${tag} app: no horizontal scroll`, m.sw <= m.iw && m.bw <= m.iw, `scrollWidth=${m.sw} inner=${m.iw}`);

@@ -353,6 +353,37 @@ test('trial logins do not count against the plan user limit (Essential plan: 3 l
   await s.stop();
 });
 
+test('plan seal + gates (selo line): the trial login gets the same map as staff, is never "owner", and X-Preview-Plan is ignored', async () => {
+  const s = await startServer(7829, { LICENSED_PLAN: 'basico', OWNER_EMAILS: OWNER_EMAIL });
+  const owner = (await s.call('POST', '/api/auth/login', { body: { email: OWNER_EMAIL, password: OWNER_PASS } })).json.token;
+  const t = await s.call('POST', '/api/demo-request', { body: { name: 'Selo Teste', email: 'selo-trial@example.com' } });
+  assert.equal(t.status, 201, t.text);
+  const tt = t.json.token;
+  const own = await s.call('GET', '/api/billing/status', { token: owner });
+  const st = await s.call('GET', '/api/billing/status', { token: tt });
+  assert.equal(st.status, 200, st.text);
+  assert.equal(st.json.plan, own.json.plan);
+  assert.equal(st.json.owner, false);
+  assert.equal(st.json.previewPlan, null);
+  assert.ok(Object.keys(st.json.gates).length >= 5, 'gate map present');
+  assert.deepEqual(st.json.gates, own.json.gates, 'same resource -> minimum plan map and locked flags as a real login');
+  assert.equal(st.json.users, own.json.users, 'the trial login is not counted');
+  // "Ver como plano" is for the platform owner only: for the trial login the header changes nothing.
+  const sneaky = await s.call('GET', '/api/billing/status', { token: tt, headers: { 'X-Preview-Plan': 'completo' } });
+  assert.equal(sneaky.json.previewPlan, null);
+  assert.equal(sneaky.json.plan, own.json.plan);
+  assert.deepEqual(sneaky.json.gates, st.json.gates);
+  // Public plans route works with no login at all.
+  const pub = await s.call('GET', '/api/public/plans');
+  assert.equal(pub.status, 200);
+  // A locked resource still answers 402 plan_required for the trial login (the badge/modal path), not a crash.
+  const lockedKey = Object.keys(st.json.gates).find((g) => st.json.gates[g].locked);
+  assert.ok(lockedKey, 'basic plan has at least one locked resource');
+  const checkout = await s.call('POST', '/api/billing/checkout', { token: tt, body: { plan: 'completo' } });
+  assert.equal(checkout.status, 403, 'checkout is owner-only and closed to trial logins');
+  await s.stop();
+});
+
 test('two simultaneous requests with the same new email: one account, both get a token, no 500, Harbor told once', async () => {
   harborHits.length = 0;
   const email = 'race@example.com';
