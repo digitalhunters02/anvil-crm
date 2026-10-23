@@ -91,15 +91,24 @@ export async function getSubscription() {
   return get(`SELECT * FROM subscription WHERE id = 1`);
 }
 
+// Plano mais alto do produto, CALCULADO pelo maior valor de PLAN_RANK (nunca escrito à mão): quando um plano novo
+// acima do atual for criado em planConfig.js, o dono e a instalação própria da Impact Digital acompanham sozinhos.
+// É função (e não constante) para refletir o objeto PLAN_RANK no momento da chamada.
+export function topPlan() {
+  return Object.keys(PLAN_RANK).reduce((best, k) => (PLAN_RANK[k] > PLAN_RANK[best] ? k : best));
+}
+
 // Plano que o robô de provisionamento da Impact Digital grava (LICENSED_PLAN) em instalações de clientes.
+// Nome de plano válido vale como está; o valor especial "max" significa sempre o plano mais alto (topPlan()).
 export function licensedPlan() {
   const p = process.env.LICENSED_PLAN;
+  if (p === 'max') return topPlan();
   return p && PLAN_RANK[p] ? p : null;
 }
 
 // Plano em vigor. Só vale limite onde há cobrança de verdade: sem Stripe configurado, ou sem assinatura do
 // Stripe por trás (instância da Impact Digital, demonstração, instalação manual) tudo fica liberado,
-// para uma instalação nunca se trancar sozinha. LICENSED_PLAN sempre ganha.
+// para uma instalação nunca se trancar sozinha (o plano liberado é o mais alto, topPlan()). LICENSED_PLAN sempre ganha.
 export async function effectivePlan() {
   // Dono da plataforma vendo o produto como outro plano (X-Preview-Plan, só para OWNER_EMAILS: owner.js / previewPlan.js):
   // vale só neste pedido e nunca muda a assinatura.
@@ -107,9 +116,9 @@ export async function effectivePlan() {
   if (preview && PLAN_RANK[preview.plan]) return preview.plan;
   const licensed = licensedPlan();
   if (licensed) return licensed;
-  if (!isConfigured()) return 'completo';
+  if (!isConfigured()) return topPlan();
   const sub = await getSubscription();
-  if (!sub.stripe_subscription_id) return 'completo';
+  if (!sub.stripe_subscription_id) return topPlan();
   if (!['active', 'trialing', 'past_due'].includes(sub.status)) return 'basico';
   return PLAN_RANK[sub.plan] ? sub.plan : 'basico';
 }
