@@ -46,7 +46,7 @@ export default function Dashboard() {
         <Kpi label="Quotes Awaiting" value={kpis.quotesAwaiting} sub="Sent, not yet decided" tone="amber" icon="quote" />
         <Kpi label="Work Orders in Production" value={kpis.workOrdersInProduction} sub="Queued through inspection" tone="blue" icon="workOrder" />
         <Kpi label="POs Awaiting Delivery" value={kpis.posAwaitingDelivery} sub="Sent or confirmed" tone="violet" icon="purchaseOrder" />
-        <Kpi label="Revenue This Month" value={money(kpis.revenueThisMonth, true)} sub="Invoiced since Sep 1" tone="green" icon="invoice" />
+        <Kpi label="Revenue This Month" value={money(kpis.revenueThisMonth, true)} sub="Invoiced this month" tone="green" icon="invoice" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">

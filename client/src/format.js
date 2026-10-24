@@ -1,6 +1,7 @@
-// The seeded data's near-term dates are anchored to this fictional "today",
-// not the real current date, so demo data always reads as current.
-const TODAY = new Date('2026-09-15T00:00:00');
+// "Hoje" de verdade (meia-noite). Antes era uma data fixa de 2026-09-15; os dados de exemplo agora são montados com datas
+// relativas a hoje (server/src/sampleData.js), então não precisa mais de "hoje" fictício.
+const TODAY = new Date();
+TODAY.setHours(0, 0, 0, 0);
 
 export function money(n, compact = false) {
   const value = Number(n) || 0;

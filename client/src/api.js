@@ -72,6 +72,10 @@ export const api = {
       return data;
     },
   },
+  // ---- dados de exemplo (só o dono) ----
+  sampleDataStatus: () => get('/sample-data/status'),
+  sampleDataLoad: () => post('/sample-data/load', {}),
+  sampleDataRemove: () => post('/sample-data/remove', {}),
   // ---- plano e cobrança ----
   billingStatus: () => get('/billing/status'),
   billingCheckout: (plan, interval = 'month') => post('/billing/checkout', { plan, interval }),
