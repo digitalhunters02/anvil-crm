@@ -13,6 +13,7 @@ import * as billing from './billing.js';
 import { blockInPreview } from './previewPlan.js';
 import { mountBillingWebhook, mountBilling } from './billingRoutes.js';
 import { mountAnvilPro } from './anvilPro.js';
+import { mountSampleData, seedSampleOnBoot, startSampleScheduler } from './sampleData.js';
 import { createPhotoImportRouter, initPhotoImportSchema, startPhotoBilling } from './photoImportRouter.js';
 import { sendNoticeEmail } from './mailer.js';
 
@@ -102,6 +103,8 @@ accountRoutes(app, ar);
 mountBilling(app, ar, requireOwner, blockDemo);
 app.use(billing.planGates());
 mountAnvilPro(app);
+// Dados de exemplo (só o dono; desligado por padrão): carregar/remover pelo botão em Configurações. Ver sampleData.js.
+mountSampleData(app, ar, requireOwner, blockDemo);
 // Teste grátis: a IA gasta dinheiro, então o "Importar de foto" inteiro fica fora do teste.
 app.use('/api/photo-import', blockDemo);
 // "Importar de foto" (AI reads a photo/print, the person reviews before saving) + extra use by credits.
@@ -853,9 +856,10 @@ app.get('/api/dashboard', ar(async (req, res) => {
     SELECT COUNT(*) AS n FROM work_orders WHERE status IN ('Queued', 'In Fabrication', 'In Welding', 'Quality Inspection')
   `)).n;
   const posAwaitingDelivery = (await get(`SELECT COUNT(*) AS n FROM purchase_orders WHERE status IN ('Sent', 'Confirmed')`)).n;
+  const monthStart = new Date().toISOString().slice(0, 7) + '-01'; // 1º dia do mês corrente (antes estava fixo em 2026-09-01)
   const revenueThisMonth = (await get(`
-    SELECT COALESCE(SUM(amount), 0) AS v FROM invoices WHERE issue_date >= '2026-09-01'
-  `)).v;
+    SELECT COALESCE(SUM(amount), 0) AS v FROM invoices WHERE issue_date >= ?
+  `, monthStart)).v;
 
   const workOrdersDueSoon = await all(`
     SELECT w.id, w.work_order_number, w.status, w.due_date, c.name AS customer_name, u.name AS owner_name, u.initials AS owner_initials, u.color AS owner_color
@@ -955,12 +959,14 @@ app.use((err, _req, res, next) => {
 initSchema()
   .then(() => initPhotoImportSchema(pool))
   .then(() => bootstrapOwner())
+  .then(() => seedSampleOnBoot()) // só com SEED_SAMPLE_DATA=true e base sem dado real
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Anvil API listening on http://localhost:${PORT}`);
     });
     startPhotoBilling({ pool, getSubscription: billing.getSubscription });
     startDemoTrialScheduler();
+    startSampleScheduler();
   })
   .catch((err) => {
     console.error('Failed to initialize database schema:', err);

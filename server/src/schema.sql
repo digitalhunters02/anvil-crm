@@ -237,3 +237,29 @@ CREATE TABLE IF NOT EXISTS work_order_labor (
   rate REAL NOT NULL,
   note TEXT
 );
+
+-- Dados de exemplo (sampleData.js): cada registro de exemplo leva is_sample = TRUE, para poder REMOVER só eles sem tocar em dado real.
+-- Tudo que as pessoas criam no app nasce com FALSE. Nada aqui carrega dado sozinho.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE rfqs ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bill_of_materials ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE quality_inspections ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE automations ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE work_order_labor ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Uma linha só: o dia a que as datas dos exemplos estão ajustadas (sampleData.js move as datas junto com o calendário).
+CREATE TABLE IF NOT EXISTS sample_data_meta (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  anchor_date TEXT NOT NULL,
+  loaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
