@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import SupportCard from '../components/SupportCard.jsx';
 import api, { BASE as API_BASE } from '../api.js';
 import Layout from '../components/Layout.jsx';
 import {
@@ -232,6 +233,7 @@ export default function Settings() {
 
   return (
     <Layout title="Settings">
+      <SupportCard />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MyAccountCard />
         {account?.role === 'owner' && <StaffCard />}

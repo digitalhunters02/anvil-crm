@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { SupportNavLink } from './SupportCard.jsx';
 import { NavLink } from 'react-router-dom';
 import Icon from './Icon.jsx';
 import { Avatar } from './ui.jsx';
@@ -171,6 +172,7 @@ export default function Sidebar({ open = false, onNavigate }) {
           <PlanPreview theme={{ accent: '#f2998f' }} langKey={lang} me={me} />
         </div>
       )}
+      <SupportNavLink />
       <div className="px-4 py-4 border-t border-sideLine flex items-center gap-2.5 flex-shrink-0">
         <button
           type="button"
